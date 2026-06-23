@@ -1,0 +1,186 @@
+"""Thin Supabase data-access helpers shared by routes, scheduling and webhooks.
+
+Every function takes the Supabase ``Client`` so callers stay testable and the
+service-role key (which bypasses RLS) lives only in the backend.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from supabase import Client
+
+SCHEDULE_VIEW = "lesson_schedule"
+
+# Each table's primary-key column (natural keys mirror Airtable; lessons keep a
+# surrogate uuid because many Airtable rows have a blank Lesson ID).
+PKS = {
+    "schools": "school_id",
+    "teachers": "teacher_id",
+    "courses": "course_id",
+    "lessons": "id",
+}
+
+
+# --- generic table helpers -------------------------------------------------
+
+def list_rows(db: Client, table: str, order: str | None = None) -> list[dict]:
+    q = db.table(table).select("*")
+    if order:
+        q = q.order(order)
+    return q.execute().data or []
+
+
+def get_row(db: Client, table: str, row_id: str) -> dict | None:
+    res = db.table(table).select("*").eq(PKS.get(table, "id"), row_id).limit(1).execute().data
+    return res[0] if res else None
+
+
+def insert_row(db: Client, table: str, payload: dict) -> dict:
+    return db.table(table).insert(payload).execute().data[0]
+
+
+def update_row(db: Client, table: str, row_id: str, payload: dict) -> dict | None:
+    res = db.table(table).update(payload).eq(PKS.get(table, "id"), row_id).execute().data
+    return res[0] if res else None
+
+
+def delete_row(db: Client, table: str, row_id: str) -> bool:
+    res = db.table(table).delete().eq(PKS.get(table, "id"), row_id).execute().data
+    return bool(res)
+
+
+# --- lessons / schedule ----------------------------------------------------
+
+def list_schedule(db: Client, start: str | None = None, end: str | None = None) -> list[dict]:
+    q = db.table(SCHEDULE_VIEW).select("*")
+    if start:
+        q = q.gte("lesson_date", start)
+    if end:
+        q = q.lte("lesson_date", end)
+    return q.order("lesson_date").order("start_time").execute().data or []
+
+
+def get_lesson_view(db: Client, lesson_id: str) -> dict | None:
+    res = db.table(SCHEDULE_VIEW).select("*").eq("id", lesson_id).limit(1).execute().data
+    return res[0] if res else None
+
+
+def list_unassigned(db: Client, limit: int = 100) -> list[dict]:
+    """Unassigned lessons, soonest first (Lesson Dashboard / reminder source)."""
+    return (
+        db.table(SCHEDULE_VIEW)
+        .select("*")
+        .eq("status", "unassigned")
+        .order("lesson_date")
+        .order("start_time")
+        .limit(limit)
+        .execute()
+        .data
+        or []
+    )
+
+
+def lesson_wati_context(view_row: dict) -> dict[str, str]:
+    """Build the WATI param context from a lesson_schedule row."""
+    from app.services.urgency import urgency_label
+
+    return {
+        "lesson_code": view_row.get("lesson_code") or "",
+        "course_name": view_row.get("course_name") or "",
+        "school_name": view_row.get("school_name") or "",
+        "date": str(view_row.get("lesson_date") or ""),
+        "start_time": str(view_row.get("start_time") or "")[:5],
+        "end_time": str(view_row.get("end_time") or "")[:5],
+        "urgency": urgency_label(view_row["lesson_date"]),
+        "lesson_material_link": view_row.get("lesson_material_link") or "",
+    }
+
+
+# --- teachers --------------------------------------------------------------
+
+def _digits(v: Any) -> str:
+    return re.sub(r"\D", "", "" if v is None else str(v))
+
+
+def teachers_by_phone(db: Client, phone: str) -> list[dict]:
+    """All teachers whose WhatsApp number matches (tolerant of country-code
+    differences). Several may share the two fallback test numbers."""
+    target = _digits(phone)
+    if not target:
+        return []
+    out = []
+    for t in db.table("teachers").select("*").execute().data or []:
+        tp = _digits(t.get("whatsapp_number"))
+        if tp and (tp == target or tp.endswith(target) or target.endswith(tp)):
+            out.append(t)
+    return out
+
+
+def find_teacher_by_phone(db: Client, phone: str) -> dict | None:
+    matches = teachers_by_phone(db, phone)
+    return matches[0] if matches else None
+
+
+# --- offer pool ------------------------------------------------------------
+
+def get_offers(db: Client, lesson_id: str) -> list[dict]:
+    return db.table("lesson_tutor_offers").select("*").eq("lesson_id", lesson_id).execute().data or []
+
+
+def upsert_offer(db: Client, lesson_id: str, teacher_id: str, **fields) -> dict:
+    payload = {"lesson_id": lesson_id, "teacher_id": teacher_id, **fields}
+    return (
+        db.table("lesson_tutor_offers")
+        .upsert(payload, on_conflict="lesson_id,teacher_id")
+        .execute()
+        .data[0]
+    )
+
+
+def set_offer_status(db: Client, lesson_id: str, teacher_id: str, status: str, responded_at: str | None = None) -> None:
+    payload: dict[str, Any] = {"offer_status": status}
+    if responded_at:
+        payload["responded_at"] = responded_at
+    db.table("lesson_tutor_offers").update(payload).eq("lesson_id", lesson_id).eq("teacher_id", teacher_id).execute()
+
+
+def offers_for_teacher(db: Client, teacher_id: str, status: str | None = None) -> list[dict]:
+    q = db.table("lesson_tutor_offers").select("*").eq("teacher_id", teacher_id)
+    if status:
+        q = q.eq("offer_status", status)
+    return q.execute().data or []
+
+
+def assigned_lessons_for_teacher(db: Client, teacher_id: str) -> list[dict]:
+    return (
+        db.table(SCHEDULE_VIEW)
+        .select("*")
+        .eq("assigned_teacher_id", teacher_id)
+        .order("lesson_date")
+        .execute()
+        .data
+        or []
+    )
+
+
+def accepted_teacher_ids(db: Client, lesson_id: str) -> list[str]:
+    rows = (
+        db.table("lesson_tutor_offers")
+        .select("teacher_id")
+        .eq("lesson_id", lesson_id)
+        .eq("offer_status", "accepted")
+        .execute()
+        .data
+        or []
+    )
+    return [r["teacher_id"] for r in rows]
+
+
+# --- audit log -------------------------------------------------------------
+
+def log_event(db: Client, lesson_id: str | None, teacher_id: str | None, event_type: str, detail: dict | None = None) -> None:
+    db.table("lesson_events").insert(
+        {"lesson_id": lesson_id, "teacher_id": teacher_id, "event_type": event_type, "detail": detail or {}}
+    ).execute()

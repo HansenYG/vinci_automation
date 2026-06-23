@@ -1,0 +1,45 @@
+# Render blueprint for the BETA backend service.
+# Deploys from the `beta` branch to a separate service.
+services:
+  - type: web
+    name: vinci-automation-api-beta
+    branch: beta
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: CORS_ORIGINS
+        sync: false            # https://vinci-automation-beta.vercel.app
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: WATI_API_URL
+        sync: false
+      - key: WATI_ACCESS_TOKEN
+        sync: false
+      - key: WATI_WEBHOOK_SECRET
+        sync: false
+      - key: ADMIN_WHATSAPP
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: OLLAMA_MODEL
+        value: llama3.1
+      - key: ENABLE_SCHEDULER
+        value: "false"
+
+  - type: cron
+    name: vinci-reminder-sweep-beta
+    branch: beta
+    runtime: docker
+    schedule: "0 * * * *"
+    dockerCommand: sh -c 'curl -fsS -X POST "$API_URL/api/scheduling/run-due-reminders?token=$TRIGGER_TOKEN"'
+    envVars:
+      - key: API_URL
+        sync: false
+      - key: TRIGGER_TOKEN
+        sync: false

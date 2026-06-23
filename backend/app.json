@@ -1,0 +1,20 @@
+{
+  "name": "vinci-automation-api",
+  "description": "Vinci Automation FastAPI backend",
+  "stack": "heroku-24",
+  "buildpacks": [{ "url": "heroku/python" }],
+  "addons": ["scheduler:standard"],
+  "env": {
+    "CORS_ORIGINS":        { "description": "Vercel frontend origin", "required": false },
+    "SUPABASE_URL":        { "required": true },
+    "SUPABASE_KEY":        { "description": "service_role key", "required": true },
+    "WATI_API_URL":        { "required": false },
+    "WATI_ACCESS_TOKEN":   { "required": false },
+    "WATI_WEBHOOK_SECRET": { "required": false },
+    "ADMIN_WHATSAPP":      { "required": false },
+    "OLLAMA_BASE_URL":     { "required": false },
+    "OLLAMA_MODEL":        { "value": "llama3.1" },
+    "ENABLE_SCHEDULER":    { "value": "false" },
+    "APP_URL":             { "description": "Public Heroku URL, for the Scheduler curl job", "required": false }
+  }
+}

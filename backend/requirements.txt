@@ -3,3 +3,6 @@ uvicorn[standard]
 pydantic-settings
 supabase
 python-dotenv
+httpx
+openpyxl
+APScheduler
