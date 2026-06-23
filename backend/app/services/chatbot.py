@@ -86,8 +86,43 @@ def _deterministic_answer(db: Client, message: str) -> dict | None:
 
 # --- LLM (primary when reachable) ------------------------------------------
 
-def _ollama_reply(db: Client, message: str, history: list[dict]) -> dict:
-    """Free-form answer via Ollama, grounded with a live DB snapshot."""
+def _llm_chat(
+    messages: list[dict],
+    *,
+    temperature: float = 0.4,
+    max_tokens: int = 400,
+    json_mode: bool = False,
+) -> dict | None:
+    """Call the configured LLM provider. Returns parsed JSON body on success, None on error."""
+    provider = settings.LLM_PROVIDER
+    base = settings.llm_base_url.rstrip("/")
+    model = settings.llm_model
+    timeout = settings.LLM_TIMEOUT_SECONDS
+
+    try:
+        if provider == "openai":
+            headers = {"Authorization": f"Bearer {settings.LLM_API_KEY}", "Content-Type": "application/json"}
+            body: dict = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+            if json_mode:
+                body["response_format"] = {"type": "json_object"}
+            resp = httpx.post(f"{base}/chat/completions", json=body, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            return {"content": data["choices"][0]["message"]["content"].strip()}
+        else:
+            body = {"model": model, "messages": messages, "stream": False, "options": {"temperature": temperature, "num_predict": max_tokens}}
+            if json_mode:
+                body["format"] = "json"
+            resp = httpx.post(f"{base}/api/chat", json=body, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            return {"content": data.get("message", {}).get("content", "").strip()}
+    except Exception:
+        return None
+
+
+def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
+    """Free-form answer via LLM, grounded with a live DB snapshot."""
     today = date.today().isoformat()
     counts = _counts(db)
     upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:12]]
@@ -105,39 +140,27 @@ def _ollama_reply(db: Client, message: str, history: list[dict]) -> dict:
         f"{[{'code': r.get('lesson_code'), 'date': str(r.get('lesson_date') or ''), 'reason': r.get('reason')} for r in urgent_all[:12]]}\n"
         f"UPCOMING lessons: {upcoming}\n"
     )
-    messages = [{"role": "system", "content": system}]
-    messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-6:]]
-    messages.append({"role": "user", "content": message})
+    full_messages = [{"role": "system", "content": system}]
+    full_messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-6:]]
+    full_messages.append({"role": "user", "content": message})
 
-    try:
-        resp = httpx.post(
-            f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/chat",
-            json={
-                "model": settings.OLLAMA_MODEL,
-                "messages": messages,
-                "stream": False,
-                "options": {"temperature": 0.4, "num_predict": 400},
-            },
-            timeout=settings.OLLAMA_TIMEOUT_SECONDS,
-        )
-        resp.raise_for_status()
-        content = resp.json().get("message", {}).get("content", "").strip()
-        return {"reply": content or "(empty response)", "source": "ollama"}
-    except httpx.HTTPError:
-        return {
-            "reply": (
-                "I can't reach the language model right now, but I can still answer "
-                "operational questions like 'show unassigned lessons', 'urgent within a week', "
-                "'today's schedule', or 'database summary'. To add data, use the input forms."
-            ),
-            "source": "fallback",
-        }
+    result = _llm_chat(full_messages)
+    if result is not None:
+        return {"reply": result["content"] or "(empty response)", "source": settings.LLM_PROVIDER}
+    return {
+        "reply": (
+            "I can't reach the language model right now, but I can still answer "
+            "operational questions like 'show unassigned lessons', 'urgent within a week', "
+            "'today's schedule', or 'database summary'. To add data, use the input forms."
+        ),
+        "source": "fallback",
+    }
 
 
 def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
     # LLM first (grounded). Only when it's unreachable do we use the
     # deterministic DB answers, then the offline message.
-    res = _ollama_reply(db, message, history or [])
+    res = _llm_reply(db, message, history or [])
     if res["source"] != "fallback":
         return res
     return _deterministic_answer(db, message) or res
@@ -171,25 +194,20 @@ def select_tutor_ids(db: Client, *, course: str, school: str, topic: str = "", l
     )
     user = f"LESSON course={course!r} school={school!r} topic={topic!r}\nCANDIDATES: {candidates}"
 
-    try:
-        resp = httpx.post(
-            f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/chat",
-            json={
-                "model": settings.OLLAMA_MODEL,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.2, "num_predict": 200},
-            },
-            timeout=settings.OLLAMA_TIMEOUT_SECONDS,
-        )
-        resp.raise_for_status()
-        data = json.loads(resp.json().get("message", {}).get("content", "{}"))
-        ids = [i for i in (data.get("teacher_ids") or []) if i in valid_ids]
-        if ids:
-            return ids[:limit], True
-    except (httpx.HTTPError, json.JSONDecodeError, ValueError, KeyError):
-        pass
+    result = _llm_chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        temperature=0.2,
+        max_tokens=200,
+        json_mode=True,
+    )
+    if result is not None:
+        try:
+            data = json.loads(result["content"])
+            ids = [i for i in (data.get("teacher_ids") or []) if i in valid_ids]
+            if ids:
+                return ids[:limit], True
+        except (json.JSONDecodeError, ValueError, KeyError):
+            pass
 
     kw = (course or "").strip().lower()
     matched = [

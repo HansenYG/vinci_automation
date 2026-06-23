@@ -41,10 +41,31 @@ class Settings(BaseSettings):
     AIRTABLE_TEACHERS_TABLE: str = "Teachers"
     AIRTABLE_LESSONS_TABLE: str = "Lessons"
 
-    # --- Ollama (free local LLM for the chatbot) --------------------------
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.1"
-    OLLAMA_TIMEOUT_SECONDS: int = 60
+    # --- LLM for the chatbot ---------------------------------------------
+    # provider = "ollama" (local, default) or "openai" (OpenAI-compatible, e.g. Groq)
+    LLM_PROVIDER: str = "ollama"
+    LLM_API_KEY: str = ""                # required for openai-compatible providers
+    LLM_BASE_URL: str = ""               # default depends on provider (see below)
+    LLM_MODEL: str = ""                  # default depends on provider (see below)
+    LLM_TIMEOUT_SECONDS: int = 60
+
+    @property
+    def llm_base_url(self) -> str:
+        if self.LLM_BASE_URL:
+            return self.LLM_BASE_URL
+        return {
+            "ollama": "http://localhost:11434",
+            "openai": "https://api.groq.com/openai/v1",
+        }.get(self.LLM_PROVIDER, "http://localhost:11434")
+
+    @property
+    def llm_model(self) -> str:
+        if self.LLM_MODEL:
+            return self.LLM_MODEL
+        return {
+            "ollama": "llama3.1",
+            "openai": "llama-3.1-8b-instant",
+        }.get(self.LLM_PROVIDER, "llama3.1")
 
     # --- In-process scheduler (reminders / re-blast) ----------------------
     # Off by default. On Render, prefer a Cron Job hitting the trigger
