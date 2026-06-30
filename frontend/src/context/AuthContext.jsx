@@ -17,27 +17,48 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true) // initial session resolution
   // Start "loading" so guards wait for the first /me rather than mis-routing.
   const [profileLoading, setProfileLoading] = useState(true)
+  // Shows a "waking up server..." indicator during Render free-tier cold starts.
+  const [serverWaking, setServerWaking] = useState(false)
   const [error, setError] = useState(null)
 
   // Resolve the backend profile (role) for the current session.
+  // On network/timeout errors (Render free-tier cold start), we show a
+  // "waking up server" indicator and retry up to 3 times before giving up.
   const refreshProfile = useCallback(async (activeSession) => {
     if (!activeSession) {
       setProfile(null)
       return null
     }
     setProfileLoading(true)
-    try {
-      const me = await getMe()
-      setProfile(me)
-      return me
-    } catch (e) {
-      // A failure here should not strand the user on a blank screen; treat as
-      // unauthorized so the UI can prompt re-login / registration.
-      setProfile({ authorized: false, error: true })
-      return null
-    } finally {
-      setProfileLoading(false)
+    let lastError = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const me = await getMe()
+        setServerWaking(false)
+        setProfile(me)
+        setProfileLoading(false)
+        return me
+      } catch (e) {
+        lastError = e
+        // Network error or timeout = server cold-starting; show indicator and retry.
+        const isNetworkError =
+          !e.response || e.code === 'ECONNABORTED' || e.code === 'ERR_NETWORK'
+        if (isNetworkError && attempt < 2) {
+          setServerWaking(true)
+          // Wait 8 s between retries (Render cold start is typically 20-50 s total)
+          await new Promise((r) => setTimeout(r, 8_000))
+          continue
+        }
+        // 4xx/5xx from the server (e.g. 403 unauthorized) — don't retry.
+        break
+      }
     }
+    setServerWaking(false)
+    // A failure here should not strand the user on a blank screen; treat as
+    // unauthorized so the UI can prompt re-login / registration.
+    setProfile({ authorized: false, error: true, _lastError: lastError?.message })
+    setProfileLoading(false)
+    return null
   }, [])
 
   useEffect(() => {
@@ -102,6 +123,7 @@ export function AuthProvider({ children }) {
     isTeacher: profile?.role === 'Teacher' && !!profile?.authorized,
     loading,
     profileLoading,
+    serverWaking,
     error,
     setError,
     signInWithPassword,

@@ -5,6 +5,9 @@ import { supabase } from '../lib/supabaseClient'
 // Configure the base URL via VITE_API_BASE_URL in your .env file.
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000',
+  // Render free tier can take up to 50 s to cold-start; give it 70 s before
+  // treating a timeout as an auth failure.
+  timeout: 70_000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -27,5 +30,23 @@ api.interceptors.request.use(async (config) => {
   }
   return config
 })
+
+// Retry once on network errors (ECONNRESET, timeout) to handle Render
+// free-tier cold starts gracefully without dropping the user to /unauthorized.
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const config = error.config
+    // Only retry once, and only for network/timeout errors (not 4xx/5xx).
+    if (!config || config._retried) return Promise.reject(error)
+    const isNetworkOrTimeout =
+      !error.response || error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK'
+    if (!isNetworkOrTimeout) return Promise.reject(error)
+    config._retried = true
+    // Wait 5 s before retrying to give the cold-start server time to wake up.
+    await new Promise((r) => setTimeout(r, 5_000))
+    return api(config)
+  }
+)
 
 export default api
