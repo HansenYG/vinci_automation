@@ -17,13 +17,17 @@ class Settings(BaseSettings):
     # SUPABASE_JWT_SECRET is the project's legacy JWT secret (Project
     # Settings -> API -> JWT Keys -> legacy). Used to verify HS256 tokens.
     SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
-    SUPABASE_JWT_ALGORITHM: str = os.getenv("SUPABASE_JWT_ALGORITHM", "HS256")
+    # Default to ES256 — Supabase projects created after 2024 use ES256 JWKS.
+    # Set SUPABASE_JWT_ALGORITHM=HS256 only for legacy projects with a JWT secret.
+    SUPABASE_JWT_ALGORITHM: str = os.getenv("SUPABASE_JWT_ALGORITHM", "ES256")
     # Vinci email domain that maps to the Admin role (Business Rules s.3).
     VINCI_EMAIL_DOMAIN: str = os.getenv("VINCI_EMAIL_DOMAIN", "vinciai.academy")
 
     # --- Supabase (set in .env) -------------------------------------------
     # Backend uses the service_role key, which bypasses RLS. Keep it secret.
-    SUPABASE_URL: str = ""
+    # Fallback to the beta project URL if env var is not set.
+    # The URL is not a secret; the service_role KEY must remain secret.
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "https://zigzgzurmuplgcqsnnlv.supabase.co")
     SUPABASE_KEY: str = ""
 
     # --- WATI (WhatsApp) --------------------------------------------------
