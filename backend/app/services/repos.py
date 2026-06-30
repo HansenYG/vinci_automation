@@ -53,13 +53,82 @@ def delete_row(db: Client, table: str, row_id: str) -> bool:
 
 # --- lessons / schedule ----------------------------------------------------
 
-def list_schedule(db: Client, start: str | None = None, end: str | None = None) -> list[dict]:
+def list_schedule(
+    db: Client,
+    start: str | None = None,
+    end: str | None = None,
+    status: str | None = None,
+    course_id: str | None = None,
+    teacher_id: str | None = None,
+) -> list[dict]:
     q = db.table(SCHEDULE_VIEW).select("*")
     if start:
         q = q.gte("lesson_date", start)
     if end:
         q = q.lte("lesson_date", end)
+    if status:
+        statuses = [s.strip().lower() for s in status.split(",") if s.strip()]
+        if len(statuses) == 1:
+            q = q.eq("status", statuses[0])
+        elif statuses:
+            q = q.in_("status", statuses)
+    if course_id:
+        q = q.eq("course_id", course_id)
+    if teacher_id:
+        q = q.eq("assigned_teacher_id", teacher_id)
     return q.order("lesson_date").order("start_time").execute().data or []
+
+
+def list_dashboard(
+    db: Client,
+    status: str | None = None,
+    course_id: str | None = None,
+    teacher_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> dict:
+    """
+    Lesson Dashboard feed with pagination.
+    Sorted by urgency: lessons needing attention (unassigned/offersent/hasacceptance)
+    closest to today first, then all others.
+    Returns {items: [...], total: int, page: int, page_size: int, pages: int}.
+    """
+    q = db.table(SCHEDULE_VIEW).select("*", count="exact")
+    if date_from:
+        q = q.gte("lesson_date", date_from)
+    if date_to:
+        q = q.lte("lesson_date", date_to)
+    if status:
+        statuses = [s.strip().lower() for s in status.split(",") if s.strip()]
+        if len(statuses) == 1:
+            q = q.eq("status", statuses[0])
+        elif statuses:
+            q = q.in_("status", statuses)
+    if course_id:
+        q = q.eq("course_id", course_id)
+    if teacher_id:
+        q = q.eq("assigned_teacher_id", teacher_id)
+
+    # Sort: closest lesson_date first (ascending)
+    q = q.order("lesson_date", desc=False).order("start_time", desc=False)
+
+    # Pagination
+    offset = (page - 1) * page_size
+    q = q.range(offset, offset + page_size - 1)
+
+    res = q.execute()
+    total = res.count or 0
+    import math
+    pages = math.ceil(total / page_size) if page_size > 0 else 1
+    return {
+        "items": res.data or [],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+    }
 
 
 def get_lesson_view(db: Client, lesson_id: str) -> dict | None:

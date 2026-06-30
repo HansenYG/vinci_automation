@@ -12,10 +12,41 @@ router = APIRouter(prefix="/lessons", tags=["lessons"])
 def list_lessons(
     start: str | None = Query(default=None, description="ISO date lower bound"),
     end: str | None = Query(default=None, description="ISO date upper bound"),
+    status: str | None = Query(default=None, description="Filter by status (comma-separated)"),
+    course_id: str | None = Query(default=None, description="Filter by course_id"),
+    teacher_id: str | None = Query(default=None, description="Filter by assigned teacher_id"),
     db: Client = Depends(get_supabase),
 ):
-    """Schedule feed (joined + 3-colour). Optionally bound by date range."""
-    return repos.list_schedule(db, start, end)
+    """Schedule feed (joined + colour). Supports status/course/teacher filters."""
+    return repos.list_schedule(db, start, end, status=status, course_id=course_id, teacher_id=teacher_id)
+
+
+@router.get("/dashboard")
+def list_dashboard(
+    status: str | None = Query(default=None, description="Comma-separated statuses, e.g. 'unassigned,offersent'"),
+    course_id: str | None = Query(default=None),
+    teacher_id: str | None = Query(default=None),
+    date_from: str | None = Query(default=None, description="ISO date lower bound"),
+    date_to: str | None = Query(default=None, description="ISO date upper bound"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: Client = Depends(get_supabase),
+):
+    """
+    Lesson Dashboard feed — all lessons sorted by urgency (closest date first).
+    Supports filtering by status, course, teacher, and date range.
+    Returns paginated results with total count.
+    """
+    return repos.list_dashboard(
+        db,
+        status=status,
+        course_id=course_id,
+        teacher_id=teacher_id,
+        date_from=date_from,
+        date_to=date_to,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/unassigned")

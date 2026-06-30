@@ -12,6 +12,10 @@ export const deleteLesson = (id) => data(api.delete(`/api/lessons/${id}`))
 export const getUnassigned = () => data(api.get('/api/lessons/unassigned'))
 export const getOffers = (id) => data(api.get(`/api/lessons/${id}/offers`))
 
+// --- Lesson Dashboard (paginated, filterable) ---
+export const getDashboardLessons = (params = {}) =>
+  data(api.get('/api/lessons/dashboard', { params }))
+
 // --- Scheduling triggers ---
 export const getAcceptedPool = (id) => data(api.get(`/api/scheduling/lessons/${id}/accepted`))
 export const blastLesson = (id) => data(api.post(`/api/scheduling/lessons/${id}/blast`))

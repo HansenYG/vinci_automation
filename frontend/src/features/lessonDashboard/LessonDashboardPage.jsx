@@ -1,36 +1,473 @@
-import { useEffect, useState } from 'react'
-import PlaceholderPage from '../../components/common/PlaceholderPage'
-import { getUnassigned } from '../../services/endpoints'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { PageHeader } from '../../components/layout/Layout'
+import { getDashboardLessons, getCourses, getTeachers } from '../../services/endpoints'
+import AssignTutorDrawer from './AssignTutorDrawer'
+import './lessonDashboard.css'
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+const STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'unassigned', label: 'Unassigned', color: 'red' },
+  { value: 'offersent', label: 'Offer Sent', color: 'yellow' },
+  { value: 'hasacceptance', label: 'Has Acceptance', color: 'yellow' },
+  { value: 'assigned', label: 'Assigned', color: 'green' },
+  { value: 'completed', label: 'Completed', color: 'blue' },
+  { value: 'cancelled', label: 'Cancelled', color: 'grey' },
+  { value: 'rescheduled', label: 'Rescheduled', color: 'yellow' },
+]
+
+// Map lesson status (from view) to display label + color
+const STATUS_META = {
+  unassigned:    { label: 'Unassigned',     color: 'red' },
+  offersent:     { label: 'Offer Sent',     color: 'yellow' },
+  hasacceptance: { label: 'Has Acceptance', color: 'yellow' },
+  assigned:      { label: 'Assigned',       color: 'green' },
+  completed:     { label: 'Completed',      color: 'blue' },
+  cancelled:     { label: 'Cancelled',      color: 'grey' },
+  rescheduled:   { label: 'Rescheduled',    color: 'yellow' },
+  expired:       { label: 'Expired',        color: 'grey' },
+}
+
+function getStatusMeta(status) {
+  const key = (status || '').toLowerCase()
+  return STATUS_META[key] || { label: status || '—', color: 'grey' }
+}
+
+function fmtDate(d) {
+  if (!d) return '—'
+  const dt = new Date(d + 'T00:00:00')
+  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function fmtTime(t) {
+  if (!t) return ''
+  return t.slice(0, 5)
+}
+
+function SortIcon({ dir }) {
+  if (!dir) return <span style={{ opacity: 0.3, fontSize: 10, marginLeft: 3 }}>↕</span>
+  return <span style={{ fontSize: 10, marginLeft: 3 }}>{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
+function SearchIcon() {
+  return (
+    <svg
+      className="ld-toolbar__search-icon"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.35-4.35" />
+    </svg>
+  )
+}
+
+const PAGE_SIZE = 25
+
+// ── Component ────────────────────────────────────────────────────────────────
 
 export default function LessonDashboardPage() {
-  const [rows, setRows] = useState([])
-  useEffect(() => { getUnassigned().then(setRows).catch(() => setRows([])) }, [])
+  // Filter state
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [courseFilter, setCourseFilter] = useState('')
+  const [teacherFilter, setTeacherFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
+  // Pagination + sort
+  const [page, setPage] = useState(1)
+  const [sortCol, setSortCol] = useState('lesson_date')
+  const [sortDir, setSortDir] = useState('asc')
+
+  // Data
+  const [result, setResult] = useState({ items: [], total: 0, pages: 1 })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [courses, setCourses] = useState([])
+  const [teachers, setTeachers] = useState([])
+
+  // Drawer
+  const [selected, setSelected] = useState(null)
+
+  // Debounce search
+  const searchTimer = useRef(null)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  useEffect(() => {
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(searchTimer.current)
+  }, [search])
+
+  // Load reference data once
+  useEffect(() => {
+    getCourses().then(setCourses).catch(() => {})
+    getTeachers().then(setTeachers).catch(() => {})
+  }, [])
+
+  // Load lessons whenever filters/page change
+  const load = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    const params = { page, page_size: PAGE_SIZE }
+    if (statusFilter) params.status = statusFilter
+    if (courseFilter) params.course_id = courseFilter
+    if (teacherFilter) params.teacher_id = teacherFilter
+    if (dateFrom) params.date_from = dateFrom
+    if (dateTo) params.date_to = dateTo
+
+    getDashboardLessons(params)
+      .then((r) => setResult(r))
+      .catch((e) => setError(e?.response?.data?.detail || 'Failed to load lessons'))
+      .finally(() => setLoading(false))
+  }, [page, statusFilter, courseFilter, teacherFilter, dateFrom, dateTo])
+
+  useEffect(() => { load() }, [load])
+
+  // Client-side search + sort on the current page's items
+  const displayItems = useMemo(() => {
+    let items = result.items || []
+
+    // Client-side search filter
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase()
+      items = items.filter(
+        (l) =>
+          (l.lesson_code || '').toLowerCase().includes(q) ||
+          (l.course_name || '').toLowerCase().includes(q) ||
+          (l.school_name || '').toLowerCase().includes(q) ||
+          (l.assigned_teacher_name || '').toLowerCase().includes(q)
+      )
+    }
+
+    // Client-side sort
+    items = [...items].sort((a, b) => {
+      let va = a[sortCol] ?? ''
+      let vb = b[sortCol] ?? ''
+      if (typeof va === 'string') va = va.toLowerCase()
+      if (typeof vb === 'string') vb = vb.toLowerCase()
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+
+    return items
+  }, [result.items, debouncedSearch, sortCol, sortDir])
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+  }
+
+  const handleFilterChange = (setter) => (e) => {
+    setter(e.target.value)
+    setPage(1)
+  }
+
+  // Stats from current result
+  const stats = useMemo(() => {
+    const items = result.items || []
+    return {
+      total: result.total,
+      unassigned: items.filter((l) => l.status === 'unassigned').length,
+      urgent: items.filter((l) => l.within_a_week && l.status === 'unassigned').length,
+      assigned: items.filter((l) => l.status === 'assigned').length,
+    }
+  }, [result])
+
+  const thProps = (col) => ({
+    className: sortCol === col ? 'sorted' : '',
+    onClick: () => handleSort(col),
+  })
+
+  const hasFilters = statusFilter || courseFilter || teacherFilter || dateFrom || dateTo || search
 
   return (
-    <PlaceholderPage
-      title="Lesson Dashboard"
-      subtitle="Complete lesson info + direct tutor assignment."
-      phase="Phase 2"
-      features={[
-        'Unassigned lessons sorted by closest date',
-        'One-click "send urgent WhatsApp" for lessons within a week',
-        'Full lesson info, Airtable-style',
-        'Direct assignment of tutors who accepted the offer',
-      ]}
-    >
-      <div className="card" style={{ padding: 20, maxWidth: 760, marginTop: 18 }}>
-        <h3 style={{ marginTop: 0, fontSize: 14 }}>Live preview — unassigned lessons ({rows.length})</h3>
-        <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-          Already powered by the Phase 1 API. Assignment + blast actions are testable today from the Schedule drawer.
-        </p>
-        {rows.slice(0, 8).map((l) => (
-          <div className="pool-row" key={l.id}>
-            <span>{l.lesson_code} · {l.course_name || '—'}</span>
-            <span className={`badge ${l.color}`}><span className={`dot bg-${l.color}`} />{l.lesson_date}</span>
+    <>
+      <PageHeader
+        title="Lesson Dashboard"
+        subtitle="All lessons — sorted by date. Assign tutors, track status, and manage lesson details."
+      />
+
+      <div className="content">
+        {/* Stats bar */}
+        <div className="ld-stats">
+          <div className="ld-stat">
+            <span className="ld-stat__count">{stats.total}</span>
+            <span className="ld-stat__label">Total</span>
           </div>
-        ))}
-        {rows.length === 0 && <span className="muted" style={{ fontSize: 13 }}>No unassigned lessons.</span>}
+          <div className="ld-stat">
+            <span className="ld-stat__count" style={{ color: 'var(--status-red)' }}>
+              {stats.urgent}
+            </span>
+            <span className="ld-stat__label">Urgent</span>
+          </div>
+          <div className="ld-stat">
+            <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>
+              {stats.unassigned}
+            </span>
+            <span className="ld-stat__label">Unassigned</span>
+          </div>
+          <div className="ld-stat">
+            <span className="ld-stat__count" style={{ color: 'var(--status-green)' }}>
+              {stats.assigned}
+            </span>
+            <span className="ld-stat__label">Assigned</span>
+          </div>
+        </div>
+
+        {/* Toolbar */}
+        <div className="ld-toolbar">
+          <div className="ld-toolbar__search">
+            <SearchIcon />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search lesson, course, school, tutor…"
+            />
+          </div>
+
+          <select
+            className="ld-filter-select"
+            value={statusFilter}
+            onChange={handleFilterChange(setStatusFilter)}
+          >
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="ld-filter-select"
+            value={courseFilter}
+            onChange={handleFilterChange(setCourseFilter)}
+          >
+            <option value="">All courses</option>
+            {courses.map((c) => (
+              <option key={c.course_id} value={c.course_id}>
+                {c.course_name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="ld-filter-select"
+            value={teacherFilter}
+            onChange={handleFilterChange(setTeacherFilter)}
+          >
+            <option value="">All tutors</option>
+            {teachers.map((t) => (
+              <option key={t.teacher_id} value={t.teacher_id}>
+                {t.teacher_name}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="date"
+            className="ld-filter-select"
+            value={dateFrom}
+            onChange={handleFilterChange(setDateFrom)}
+            title="From date"
+          />
+          <input
+            type="date"
+            className="ld-filter-select"
+            value={dateTo}
+            onChange={handleFilterChange(setDateTo)}
+            title="To date"
+          />
+
+          {hasFilters && (
+            <button
+              className="btn btn--sm btn--ghost"
+              onClick={() => {
+                setSearch('')
+                setStatusFilter('')
+                setCourseFilter('')
+                setTeacherFilter('')
+                setDateFrom('')
+                setDateTo('')
+                setPage(1)
+              }}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+
+        {/* Table */}
+        <div className="ld-table-wrap">
+          {error && (
+            <div style={{ padding: '16px 20px', color: 'var(--status-red)', fontSize: 13.5 }}>
+              Error: {error}
+            </div>
+          )}
+
+          {loading && !error && <div className="spinner" />}
+
+          {!loading && !error && displayItems.length === 0 && (
+            <div className="ld-empty">
+              <div className="ld-empty__icon">📋</div>
+              <div className="ld-empty__text">No lessons found</div>
+              <div className="ld-empty__sub">Try adjusting your filters</div>
+            </div>
+          )}
+
+          {!loading && !error && displayItems.length > 0 && (
+            <table className="ld-table">
+              <thead>
+                <tr>
+                  <th {...thProps('lesson_code')}>
+                    Lesson ID <SortIcon dir={sortCol === 'lesson_code' ? sortDir : null} />
+                  </th>
+                  <th {...thProps('course_name')}>
+                    Course <SortIcon dir={sortCol === 'course_name' ? sortDir : null} />
+                  </th>
+                  <th {...thProps('lesson_date')}>
+                    Date &amp; Time <SortIcon dir={sortCol === 'lesson_date' ? sortDir : null} />
+                  </th>
+                  <th {...thProps('status')}>
+                    Status <SortIcon dir={sortCol === 'status' ? sortDir : null} />
+                  </th>
+                  <th {...thProps('assigned_teacher_name')}>
+                    Tutor <SortIcon dir={sortCol === 'assigned_teacher_name' ? sortDir : null} />
+                  </th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayItems.map((lesson) => {
+                  const sm = getStatusMeta(lesson.status)
+                  const needsAction = ['unassigned', 'offersent', 'hasacceptance'].includes(
+                    (lesson.status || '').toLowerCase()
+                  )
+                  return (
+                    <tr
+                      key={lesson.id}
+                      className="clickable"
+                      onClick={() => setSelected(lesson)}
+                    >
+                      <td>
+                        <span className="ld-lesson-code">{lesson.lesson_code || '—'}</span>
+                      </td>
+                      <td>
+                        <div className="ld-course-name">{lesson.course_name || '—'}</div>
+                        <div className="ld-school-name">{lesson.school_name || ''}</div>
+                      </td>
+                      <td>
+                        <div className="ld-datetime">
+                          <div className="ld-date">
+                            {lesson.within_a_week && needsAction && (
+                              <span
+                                className="ld-urgent-dot"
+                                style={{ background: 'var(--status-red)' }}
+                                title="Within a week — urgent"
+                              />
+                            )}
+                            {fmtDate(lesson.lesson_date)}
+                          </div>
+                          <div className="ld-time">
+                            {fmtTime(lesson.start_time)}
+                            {lesson.end_time ? ` – ${fmtTime(lesson.end_time)}` : ''}
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`badge ${sm.color}`}>
+                          <span className={`dot bg-${sm.color}`} />
+                          {sm.label}
+                        </span>
+                      </td>
+                      <td>
+                        {lesson.assigned_teacher_name ? (
+                          <span className="ld-teacher">{lesson.assigned_teacher_name}</span>
+                        ) : (
+                          <span className="ld-teacher ld-teacher--none">—</span>
+                        )}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <button
+                          className="ld-assign-btn"
+                          onClick={() => setSelected(lesson)}
+                        >
+                          {needsAction ? 'Assign tutor' : 'View details'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {/* Pagination */}
+          {!loading && result.pages > 1 && (
+            <div className="ld-pagination">
+              <span>
+                {result.total} lessons · Page {page} of {result.pages}
+              </span>
+              <div className="ld-pagination__pages">
+                <button
+                  className="ld-pagination__btn"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  ← Prev
+                </button>
+                {Array.from({ length: Math.min(result.pages, 7) }, (_, i) => {
+                  const totalPages = result.pages
+                  let start = Math.max(1, page - 3)
+                  const end = Math.min(totalPages, start + 6)
+                  start = Math.max(1, end - 6)
+                  const pageNum = start + i
+                  if (pageNum > totalPages) return null
+                  return (
+                    <button
+                      key={pageNum}
+                      className={`ld-pagination__btn${page === pageNum ? ' active' : ''}`}
+                      onClick={() => setPage(pageNum)}
+                    >
+                      {pageNum}
+                    </button>
+                  )
+                })}
+                <button
+                  className="ld-pagination__btn"
+                  disabled={page >= result.pages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </PlaceholderPage>
+
+      {/* Assign tutor drawer */}
+      {selected && (
+        <AssignTutorDrawer
+          lesson={selected}
+          onClose={() => setSelected(null)}
+          onChanged={() => {
+            load()
+            setSelected(null)
+          }}
+        />
+      )}
+    </>
   )
 }
