@@ -3,3 +3,9 @@ uvicorn[standard]
 pydantic-settings
 supabase
 python-dotenv
+httpx
+openpyxl
+APScheduler
+python-jose[cryptography]
+passlib[bcrypt]
+cryptography

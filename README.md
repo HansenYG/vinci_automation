@@ -1,106 +1,128 @@
 # Vinci Automation
 
-Full-stack application scaffold.
+Tutoring-operations automation: a colour-coded lesson **Schedule**, an admin
+**Chatbot**, and the WhatsApp (WATI) automation that schedules classes, chases
+tutors, takes their acceptances, assigns them, and sends out lesson materials.
 
-- **Frontend** — React (JavaScript) + Vite
-- **Backend** — FastAPI
-- **Database** — Supabase
+- **Frontend** — React 19 + Vite (Vercel-ready) · `frontend/`
+- **Backend** — FastAPI (Render-ready) · `backend/`
+- **Database** — Supabase (Postgres) · `supabase/`
+- **Messaging** — WATI (WhatsApp) · **LLM** — Ollama (free, local)
 
-> This is the development framework only. Application features are added on top of this structure.
+## Phase status
 
-## Project structure
+| Phase | Scope | State |
+| ----- | ----- | ----- |
+| **1.1** | Chatbot, backend+DB in prod, all WhatsApp working, automated triggers | ✅ built |
+| **1.2** | Schedule hub — daily/weekly/monthly, 3-colour status | ✅ built |
+| 2 | Lesson Dashboard | scaffolded (route + endpoints + preview) |
+| 3 | Finances | scaffolded |
+| 4 | Urgent News | scaffolded (live feed) |
+
+## Architecture
 
 ```
-vinci_automation/
-├── frontend/                 # React + Vite app
-│   ├── src/
-│   │   ├── assets/
-│   │   ├── components/       # Reusable UI components
-│   │   ├── context/          # React context providers
-│   │   ├── hooks/            # Custom hooks
-│   │   ├── lib/
-│   │   │   └── supabaseClient.js
-│   │   ├── pages/            # Route-level views
-│   │   ├── services/
-│   │   │   └── api.js        # Axios client for the backend
-│   │   ├── utils/
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   └── .env.example
-│
-├── backend/                  # FastAPI app
-│   ├── app/
-│   │   ├── api/routes/       # API route modules
-│   │   ├── core/             # Config + Supabase client
-│   │   ├── models/           # Data models
-│   │   ├── schemas/          # Pydantic request/response schemas
-│   │   ├── services/         # Business logic
-│   │   └── main.py           # App entrypoint
-│   ├── requirements.txt
-│   └── .env.example
-│
-└── supabase/
-    └── migrations/           # SQL migrations
+React (Vercel)  ──HTTP──>  FastAPI (Render)  ──>  Supabase (Postgres)
+   Schedule hub               REST + triggers          4 linked tables
+   Chatbot                    WATI client      ──>  WATI  (WhatsApp)
+                              Ollama client     ──>  Ollama (LLM)
+   WATI webhook  ──POST──>  /api/webhooks/wati
 ```
 
-## Prerequisites
+Lessons live in Supabase (the source of truth). The automated triggers
+(reminders, re-blast, tutor selection, file-send, cancellation) are a port of
+the original Google Apps Scripts — see `backend/reference/README.md`.
 
-- Node.js 18+ and npm
-- Python 3.10+
-- A Supabase project (for database access)
+## Quick start (local)
 
-## Getting started
+### 1. Supabase
+1. Create a project at supabase.com.
+2. SQL Editor → run `supabase/migrations/0001_phase1_schema.sql`, then
+   `0002_seed_airtable.sql` (the real Airtable data — schools, teachers,
+   courses, lessons — auto-generated from the exported CSVs).
+3. Project Settings → API: copy the URL, the **anon** key, and the
+   **service_role** key.
 
-### 1. Backend
-
+### 2. Backend
 ```bash
 cd backend
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS / Linux
-source .venv/bin/activate
-
+.venv\Scripts\activate            # Windows (venv already created)
 pip install -r requirements.txt
-cp .env.example .env          # then fill in your Supabase credentials
-
+# .env is pre-filled with WATI/Airtable values from your materials.
+# Add SUPABASE_URL + SUPABASE_KEY (service_role), then:
 uvicorn app.main:app --reload
 ```
+API: http://localhost:8000 · docs: http://localhost:8000/docs · health: `/api/health`
 
-API runs at http://localhost:8000 (interactive docs at `/docs`).
-Health check: http://localhost:8000/api/health
-
-### 2. Frontend
-
+### 3. Frontend
 ```bash
 cd frontend
 npm install
-cp .env.example .env          # then fill in your values
-
+# frontend/.env already points VITE_API_BASE_URL at http://localhost:8000
 npm run dev
 ```
+App: http://localhost:5173
 
-App runs at http://localhost:5173.
+### 4. Ollama (chatbot LLM, optional)
+```bash
+# install from ollama.com, then:
+ollama pull llama3.1
+```
+The chatbot answers DB questions (unassigned, urgent, today, summary) and
+exports Excel even without Ollama; Ollama only adds free-form replies.
 
-### 3. Supabase
+## Testing Phase 1.1 (WhatsApp automation)
 
-See [`supabase/README.md`](supabase/README.md) for creating the project and
-wiring up credentials.
+1. Backend + Supabase running, demo data loaded.
+2. **Schedule** → click an unassigned (red/yellow) lesson → **Send WhatsApp
+   blast**. Tutors with no number fall back to the two test numbers.
+3. Tutor replies **"Accept"** → set the WATI webhook to
+   `POST https://<backend>/api/webhooks/wati?token=<WATI_WEBHOOK_SECRET>`
+   (use ngrok locally). The acceptance appears under the lesson's "Accepted tutors".
+4. Click **Assign** on an accepted tutor → status flips to assigned (green) and
+   the confirmation + **material link** is sent.
+5. Tutor replies **"cancel"/"reschedule"** → lesson unassigns, admin is
+   notified, the pool is re-blasted.
 
-## Environment variables
+See `backend/.env.example` for every setting.
 
-**frontend/.env**
+## Deploy
 
-| Variable                  | Description                       |
-| ------------------------- | --------------------------------- |
-| `VITE_API_BASE_URL`       | Base URL of the FastAPI backend   |
-| `VITE_SUPABASE_URL`       | Supabase project URL              |
-| `VITE_SUPABASE_ANON_KEY`  | Supabase anon public key          |
+**Backend → Heroku** (the app lives in `backend/`). Heroku auto-detects
+`backend/requirements.txt` + `backend/Procfile`; `backend/.python-version`
+pins Python 3.11 and `backend/app.json` documents config vars + the Scheduler
+add-on. No app is created until you run these:
 
-**backend/.env**
+```bash
+heroku create vinci-automation-api
+heroku stack:set heroku-24 -a vinci-automation-api
+# secrets (config vars = the equivalent of your gitignored .env):
+heroku config:set -a vinci-automation-api SUPABASE_URL=... SUPABASE_KEY=... \
+  WATI_API_URL=... WATI_ACCESS_TOKEN=... WATI_WEBHOOK_SECRET=change-me \
+  CORS_ORIGINS=https://your-app.vercel.app APP_URL=https://vinci-automation-api.herokuapp.com
+# deploy the backend/ subtree (commits required):
+git subtree push --prefix backend heroku main
+```
+(Monorepo alternative: `heroku-buildpack-monorepo` with `APP_BASE=backend`, then `git push heroku main`.)
 
-| Variable        | Description                                  |
-| --------------- | -------------------------------------------- |
-| `CORS_ORIGINS`  | Comma-separated allowed frontend origins     |
-| `SUPABASE_URL`  | Supabase project URL                         |
-| `SUPABASE_KEY`  | Supabase service_role (or anon) key          |
+**Reminder sweep** — Heroku Scheduler (`heroku addons:open scheduler`), hourly:
+```bash
+curl -fsS -X POST "$APP_URL/api/scheduling/run-due-reminders?token=$WATI_WEBHOOK_SECRET"
+```
+
+**Frontend → Vercel** (`frontend/vercel.json`). Set `VITE_API_BASE_URL` to the
+Heroku URL as a Vercel env var. After deploy, repoint the WATI webhook to
+`https://vinci-automation-api.herokuapp.com/api/webhooks/wati?token=<secret>`.
+
+> `render.yaml` is kept as an inert alternative (Render). It doesn't affect Heroku — delete it if you don't want it.
+
+## Project layout
+
+```
+vinci_automation/
+├── frontend/   React app — features/{schedule,chatbot,lessonDashboard,finances,urgentNews}; vercel.json
+├── backend/    FastAPI — app/{api/routes,services,schemas,core}; Procfile, app.json, .python-version
+├── supabase/   migrations/ (schema + seed)
+├── render.yaml (optional, inert)
+└── README.md
+```
