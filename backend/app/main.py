@@ -16,11 +16,10 @@ async def lifespan(app: FastAPI):
         from app.services.scheduler import start_scheduler
 
         scheduler = start_scheduler()
-    
-    # Create initial admin user if not exists
-    from app.services.auth import create_initial_admin_user
-    await create_initial_admin_user()
-    
+
+    # Auth identities are owned by Supabase Auth + the on_auth_user_created
+    # trigger (Business Rules s.18); no app-side admin bootstrap is needed.
+
     try:
         yield
     finally:
@@ -61,10 +60,10 @@ def create_app() -> FastAPI:
             "services": {}
         }
         
-        # Check database connection
+        # Check database connection (count is a HEAD query; empty tables are fine)
         try:
-            result = db.table("lessons").select("count").limit(1).execute()
-            health_status["services"]["database"] = "connected" if result.data else "disconnected"
+            db.table("app_users").select("user_id", count="exact").limit(1).execute()
+            health_status["services"]["database"] = "connected"
         except Exception as e:
             health_status["services"]["database"] = f"error: {str(e)}"
         

@@ -17,6 +17,10 @@ services:
         sync: false
       - key: SUPABASE_KEY
         sync: false
+      - key: VINCI_EMAIL_DOMAIN
+        value: vinciai.academy
+      - key: SUPABASE_JWT_SECRET
+        sync: false          # only needed if the project issues legacy HS256 tokens
       - key: WATI_API_URL
         sync: false
       - key: WATI_ACCESS_TOKEN

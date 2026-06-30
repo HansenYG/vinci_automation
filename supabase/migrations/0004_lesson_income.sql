@@ -9,8 +9,15 @@ alter table public.lessons
 
 -- ---------------------------------------------------------------------
 -- Rebuild lessons_full to include lesson_income
+-- NOTE: dropped first because the new column is inserted mid-list, which
+-- CREATE OR REPLACE VIEW cannot do (it may only append trailing columns).
+-- Dependent views are dropped below and recreated afterwards.
 -- ---------------------------------------------------------------------
-create or replace view public.lessons_full as
+drop view if exists public.urgent_news;
+drop view if exists public.lesson_schedule;
+drop view if exists public.lessons_full;
+
+create view public.lessons_full as
 select
     l.id,
     l.lesson_id,

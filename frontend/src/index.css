@@ -159,6 +159,72 @@ a {
   padding: 1px 6px;
 }
 
+/* ---------- Sidebar user card ---------- */
+.sidebar__user {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: auto;
+}
+.sidebar__avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2d6edc, #14a082);
+}
+.sidebar__userinfo { min-width: 0; flex: 1; }
+.sidebar__username {
+  font-size: 13px;
+  font-weight: 600;
+  color: #eaf1fb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar__userrole { margin-top: 3px; }
+.role-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: #bcd0ee;
+  border: 1px solid #2a456c;
+}
+.role-pill--admin {
+  color: #f3c267;
+  border-color: rgba(230, 160, 30, 0.5);
+  background: rgba(230, 160, 30, 0.14);
+}
+.sidebar__signout {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #9fb6d6;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar__signout:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
 /* ---------- Main content ---------- */
 .main {
   display: flex;

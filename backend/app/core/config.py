@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
 import os
 
 
@@ -12,21 +11,15 @@ class Settings(BaseSettings):
     # Comma-separated list of origins allowed to call the API (CORS).
     CORS_ORIGINS: str = "http://localhost:5173"
 
-    # JWT Authentication Security
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
-    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-
-    # Admin credentials for initial login
-    ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
-    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@vinciautomation.com")
-    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
-
-    @field_validator("ADMIN_PASSWORD")
-    def validate_admin_password(cls, v):
-        if not v:
-            raise ValueError("ADMIN_PASSWORD must be set for initial admin user creation")
-        return v
+    # --- Supabase Auth (Phase 1) ------------------------------------------
+    # The frontend authenticates users with Supabase Auth (Google OAuth or
+    # email + password). The backend validates the resulting access token.
+    # SUPABASE_JWT_SECRET is the project's legacy JWT secret (Project
+    # Settings -> API -> JWT Keys -> legacy). Used to verify HS256 tokens.
+    SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
+    SUPABASE_JWT_ALGORITHM: str = os.getenv("SUPABASE_JWT_ALGORITHM", "HS256")
+    # Vinci email domain that maps to the Admin role (Business Rules s.3).
+    VINCI_EMAIL_DOMAIN: str = os.getenv("VINCI_EMAIL_DOMAIN", "vinciai.academy")
 
     # --- Supabase (set in .env) -------------------------------------------
     # Backend uses the service_role key, which bypasses RLS. Keep it secret.

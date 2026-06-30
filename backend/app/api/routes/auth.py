@@ -1,242 +1,270 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from typing import Optional
-from datetime import datetime, timedelta
+"""Authentication & authorization for Vinci Automation (Phase 1).
+
+Users sign in on the frontend with Supabase Auth (Google OAuth or
+email + password). The frontend sends the resulting Supabase access token
+as a Bearer token on every API call. This module:
+
+  * verifies the Supabase-issued JWT (HS256, signed with the project's
+    JWT secret),
+  * loads the caller's profile from public.app_users (role, teacher_id,
+    is_vinci_email),
+  * exposes FastAPI dependencies for server-side role checks
+    (Business Rules v1.2 s.6A / s.12): 401 when unauthenticated,
+    403 when the role is wrong,
+  * exposes GET /api/auth/me so the frontend can resolve the session into
+    a role and decide which UI to render (including the "Unauthorized,
+    request registration" page when there is no app_users row).
+
+No passwords, no custom users table: identity is owned by Supabase Auth and
+roles are owned by public.app_users (populated by the on_auth_user_created
+trigger per Business Rules s.18).
+"""
+from __future__ import annotations
+
+import time
+from typing import Any, Optional
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+from jose.utils import base64url_decode  # noqa: F401  (ensures jose crypto is present)
 from pydantic import BaseModel
-import os
-import secrets
 from supabase import Client
-from app.core.database import get_supabase
+
 from app.core.config import settings
+from app.core.database import get_supabase
 
-# Password hashing utility
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated=["auto"])
+# Bearer scheme; auto_error=False so we can return our own 401 shape.
+bearer_scheme = HTTPBearer(auto_error=False)
 
-# JWT token settings
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", settings.JWT_SECRET_KEY)
-ALGORITHM = settings.JWT_ALGORITHM
-ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
-# OAuth2 scheme for FastAPI
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", schemeName="JWT")
-
-# Pydantic models
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class TokenData(BaseModel):
-    username: Optional[str] = None
-    role: Optional[str] = None
-
-class UserCreate(BaseModel):
-    username: str
+# --------------------------------------------------------------------- models
+class AppUser(BaseModel):
+    user_id: str
     email: str
-    password: str
-    role: str = "admin"
+    role: str                       # 'Admin' | 'Teacher'
+    is_vinci_email: bool = False
+    teacher_id: Optional[str] = None
+    display_name: Optional[str] = None
+    authorized: bool = True         # False => show "request registration"
 
-class UserLogin(BaseModel):
-    username: str
-    password: str
 
-# Helper functions
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+# ------------------------------------------------------------------ jwt decode
+# Supabase projects issue access tokens signed either with the legacy HS256
+# shared secret OR with asymmetric JWT signing keys (ES256/RS256). We verify
+# against the project's JWKS by default (works for asymmetric keys) and fall
+# back to the HS256 shared secret when configured. The JWKS is cached.
+_JWKS_CACHE: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
+_JWKS_TTL_SECONDS = 3600
 
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+def _jwks_url() -> str:
+    base = settings.SUPABASE_URL.rstrip("/")
+    return f"{base}/auth/v1/.well-known/jwks.json"
 
-# Dependency to get current user from JWT token
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
+
+def _get_jwks(force: bool = False) -> list[dict[str, Any]]:
+    now = time.time()
+    if (
+        not force
+        and _JWKS_CACHE["keys"] is not None
+        and (now - _JWKS_CACHE["fetched_at"]) < _JWKS_TTL_SECONDS
+    ):
+        return _JWKS_CACHE["keys"]
+    try:
+        resp = httpx.get(_jwks_url(), timeout=10)
+        resp.raise_for_status()
+        keys = resp.json().get("keys", [])
+        _JWKS_CACHE["keys"] = keys
+        _JWKS_CACHE["fetched_at"] = now
+        return keys
+    except Exception:
+        # Return whatever we have cached (possibly None) on network failure.
+        return _JWKS_CACHE["keys"] or []
+
+
+def _unverified_alg(token: str) -> str:
+    try:
+        return jwt.get_unverified_header(token).get("alg", "")
+    except JWTError:
+        return ""
+
+
+def _decode_supabase_jwt(token: str) -> dict[str, Any]:
+    """Verify and decode a Supabase access token (asymmetric or HS256)."""
+    alg = _unverified_alg(token)
+    cred_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        role: str = payload.get("role")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username, role=role)
-    except JWTError:
-        raise credentials_exception
-    
-    # Get user from database
-    db: Client = get_supabase()
-    user = db.table("users").select("*").eq("username", token_data.username).execute().data
-    if not user:
-        raise credentials_exception
-    
-    return user[0]
 
-async def get_current_active_user(current_user: dict = Depends(get_current_user)):
-    if not current_user.get("is_active", True):
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
+    # HS256 (legacy shared secret) path.
+    if alg == "HS256":
+        if not settings.SUPABASE_JWT_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Server auth not configured for HS256 (missing SUPABASE_JWT_SECRET).",
+            )
+        try:
+            return jwt.decode(
+                token,
+                settings.SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+                options={"verify_aud": True},
+            )
+        except JWTError as exc:
+            raise cred_exc from exc
 
-# Role-based access control
-def require_role(role: str):
-    async def role_checker(current_user: dict = Depends(get_current_active_user)):
-        if current_user.get("role") != role:
+    # Asymmetric (ES256/RS256) path via JWKS.
+    for attempt in range(2):
+        keys = _get_jwks(force=(attempt == 1))
+        if not keys:
+            continue
+        try:
+            return jwt.decode(
+                token,
+                {"keys": keys},
+                algorithms=["ES256", "RS256", "EdDSA"],
+                audience="authenticated",
+                options={"verify_aud": True},
+            )
+        except JWTError:
+            # Key may have rotated; retry once with a forced JWKS refresh.
+            if attempt == 1:
+                raise cred_exc
+    raise cred_exc
+
+
+def _is_vinci_email(email: str) -> bool:
+    domain = (email or "").split("@")[-1].lower()
+    return domain == settings.VINCI_EMAIL_DOMAIN.lower()
+
+
+# ----------------------------------------------------------------- dependencies
+async def get_token_payload(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> dict[str, Any]:
+    if creds is None or not creds.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return _decode_supabase_jwt(creds.credentials)
+
+
+async def get_current_user(
+    payload: dict[str, Any] = Depends(get_token_payload),
+    db: Client = Depends(get_supabase),
+) -> AppUser:
+    """Resolve the authenticated identity into an app_users profile.
+
+    If the token is valid but there is no app_users row, the account is
+    unauthenticated for app purposes (Business Rules s.18 "Unauthorized,
+    request registration"): we raise 403 so protected routes are blocked.
+    The /me endpoint handles this case explicitly without raising.
+    """
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    row = (
+        db.table("app_users")
+        .select("user_id, email, role, is_vinci_email, teacher_id, display_name")
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized: this account is not registered. Please request registration.",
+        )
+
+    u = row[0]
+    return AppUser(
+        user_id=u["user_id"],
+        email=u["email"],
+        role=u["role"],
+        is_vinci_email=bool(u.get("is_vinci_email")),
+        teacher_id=u.get("teacher_id"),
+        display_name=u.get("display_name"),
+        authorized=True,
+    )
+
+
+def require_role(*roles: str):
+    """Dependency factory: allow only the given app_users roles."""
+    async def _checker(current_user: AppUser = Depends(get_current_user)) -> AppUser:
+        if current_user.role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Operation not permitted"
+                detail="Operation not permitted for your role.",
             )
         return current_user
-    return role_checker
+    return _checker
 
-# Auth API endpoints router
-from fastapi import APIRouter
 
+# Convenience deps used across the API.
+require_admin = require_role("Admin")
+require_authenticated = get_current_user
+
+
+# ---------------------------------------------------------------------- routes
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(user: UserCreate, db: Client = Depends(get_supabase)):
-    existing_user = db.table("users").select("*").eq("username", user.username).execute().data
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
-        )
-    
-    hashed_password = get_password_hash(user.password)
-    user_data = {
-        "username": user.username,
-        "email": user.email,
-        "hashed_password": hashed_password,
-        "role": user.role,
-        "is_active": True,
-        "created_at": datetime.utcnow().isoformat()
-    }
-    
-    result = db.table("users").insert(user_data).execute()
-    if not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create user"
-        )
-    
-    return {"message": "User created successfully", "user_id": result.data[0]["id"]}
-
-@router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Client = Depends(get_supabase)):
-    user = db.table("users").select("*").eq("username", form_data.username).execute().data
-    if not user or not verify_password(form_data.password, user[0]["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password"
-        )
-    
-    if not user[0].get("is_active", True):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
-    
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user[0]["username"], "role": user[0]["role"], "user_id": user[0]["id"]}
-    )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me")
-async def get_me(current_user: dict = Depends(get_current_active_user)):
-    return {
-        "id": current_user.get("id"),
-        "username": current_user.get("username"),
-        "email": current_user.get("email"),
-        "role": current_user.get("role")
-    }
-
-@router.post("/logout")
-async def logout():
-    return {"message": "Logged out successfully"}
-
-# User management endpoints (admin only)
-@router.get("/users")
-async def list_users(
-    skip: int = 0,
-    limit: int = 100,
-    current_user: dict = Depends(require_role("admin"))
+async def get_me(
+    payload: dict[str, Any] = Depends(get_token_payload),
+    db: Client = Depends(get_supabase),
 ):
-    db: Client = get_supabase()
-    users = db.table("users").select("*").range(skip, skip + limit - 1).execute().data
-    return users
+    """Return the caller's profile and role.
 
-@router.patch("/users/{user_id}")
-async def update_user(
-    user_id: str,
-    updates: dict,
-    current_user: dict = Depends(require_role("admin"))
-):
-    if "username" in updates or "email" in updates or "hashed_password" in updates:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot update username, email, or password directly. Use dedicated endpoints."
+    A valid Supabase session with no app_users row resolves to an
+    "unauthorized" profile (authorized=False) so the frontend can render the
+    "Unauthorized, request registration" page instead of erroring.
+    """
+    user_id = payload.get("sub")
+    email = payload.get("email", "")
+
+    row = (
+        db.table("app_users")
+        .select("user_id, email, role, is_vinci_email, teacher_id, display_name")
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+        .data
+    )
+
+    if not row:
+        # Valid login but not provisioned -> unauthorized (request registration).
+        return AppUser(
+            user_id=user_id or "",
+            email=email,
+            role="Teacher",
+            is_vinci_email=_is_vinci_email(email),
+            teacher_id=None,
+            display_name=(email.split("@")[0] if email else None),
+            authorized=False,
         )
-    
-    db: Client = get_supabase()
-    result = db.table("users").update(updates).eq("id", user_id).execute()
-    if not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
-    return {"message": "User updated successfully"}
 
-# Password change endpoint
-@router.post("/change-password")
-async def change_password(
-    current_password: str,
-    new_password: str,
-    current_user: dict = Depends(get_current_active_user)
-):
-    db: Client = get_supabase()
-    user = db.table("users").select("*").eq("id", current_user["id"]).execute().data
-    
-    if not verify_password(current_password, user[0]["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Current password is incorrect"
-        )
-    
-    hashed_password = get_password_hash(new_password)
-    db.table("users").update({"hashed_password": hashed_password}).eq("id", current_user["id"]).execute()
-    
-    return {"message": "Password changed successfully"}
+    u = row[0]
+    return AppUser(
+        user_id=u["user_id"],
+        email=u["email"],
+        role=u["role"],
+        is_vinci_email=bool(u.get("is_vinci_email")),
+        teacher_id=u.get("teacher_id"),
+        display_name=u.get("display_name"),
+        authorized=True,
+    )
 
-# Admin endpoints for system management
-@router.get("/system/stats")
-async def system_stats(current_user: dict = Depends(require_role("admin"))):
-    db: Client = get_supabase()
-    stats = {}
-    
-    for table in ["lessons", "teachers", "courses", "schools", "urgent_news", "lesson_events"]:
-        result = db.table(table).select("*").execute()
-        stats[table] = len(result.data) if result.data else 0
-    
-    return stats
 
-@router.get("/system/health")
-async def system_health(current_user: dict = Depends(require_role("admin"))):
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0"
-    }
+@router.get("/health", include_in_schema=False)
+async def auth_health():
+    return {"auth": "supabase", "configured": bool(settings.SUPABASE_JWT_SECRET)}
