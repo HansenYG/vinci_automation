@@ -85,18 +85,6 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const signInWithGoogle = useCallback(async () => {
-    setError(null)
-    const { error: e } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    })
-    if (e) {
-      setError(e.message)
-      throw e
-    }
-  }, [])
-
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
     setProfile(null)
@@ -117,7 +105,6 @@ export function AuthProvider({ children }) {
     error,
     setError,
     signInWithPassword,
-    signInWithGoogle,
     signOut,
     refreshProfile: () => refreshProfile(session),
   }
