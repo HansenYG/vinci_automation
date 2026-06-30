@@ -1,23 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageHeader } from '../../components/layout/Layout'
 import { getDashboardLessons, getCourses, getTeachers } from '../../services/endpoints'
-import AssignTutorDrawer from './AssignTutorDrawer'
+import LessonDetailDrawer from '../schedule/LessonDetailDrawer'
+import { useLessonsContext } from '../../context/LessonsContext'
 import './lessonDashboard.css'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
-  { value: 'unassigned', label: 'Unassigned', color: 'red' },
-  { value: 'offersent', label: 'Offer Sent', color: 'yellow' },
-  { value: 'hasacceptance', label: 'Has Acceptance', color: 'yellow' },
-  { value: 'assigned', label: 'Assigned', color: 'green' },
-  { value: 'completed', label: 'Completed', color: 'blue' },
-  { value: 'cancelled', label: 'Cancelled', color: 'grey' },
-  { value: 'rescheduled', label: 'Rescheduled', color: 'yellow' },
+  { value: 'unassigned', label: 'Unassigned' },
+  { value: 'offersent', label: 'Offer Sent' },
+  { value: 'hasacceptance', label: 'Has Acceptance' },
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'rescheduled', label: 'Rescheduled' },
 ]
 
-// Map lesson status (from view) to display label + color
 const STATUS_META = {
   unassigned:    { label: 'Unassigned',     color: 'red' },
   offersent:     { label: 'Offer Sent',     color: 'yellow' },
@@ -52,15 +52,7 @@ function SortIcon({ dir }) {
 
 function SearchIcon() {
   return (
-    <svg
-      className="ld-toolbar__search-icon"
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
+    <svg className="ld-toolbar__search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
       <circle cx="11" cy="11" r="8" />
       <path d="m21 21-4.35-4.35" />
     </svg>
@@ -73,32 +65,34 @@ const PAGE_SIZE = 25
 
 export default function LessonDashboardPage() {
   // Filter state
-  const [search, setSearch] = useState('')
+  const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [courseFilter, setCourseFilter] = useState('')
   const [teacherFilter, setTeacherFilter] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [dateFrom, setDateFrom]       = useState('')
+  const [dateTo, setDateTo]           = useState('')
 
   // Pagination + sort
-  const [page, setPage] = useState(1)
+  const [page, setPage]       = useState(1)
   const [sortCol, setSortCol] = useState('lesson_date')
   const [sortDir, setSortDir] = useState('asc')
 
   // Data
-  const [result, setResult] = useState({ items: [], total: 0, pages: 1 })
+  const [result, setResult]   = useState({ items: [], total: 0, pages: 1 })
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError]     = useState(null)
   const [courses, setCourses] = useState([])
   const [teachers, setTeachers] = useState([])
 
-  // Drawer
+  // Drawer — uses the unified LessonDetailDrawer
   const [selected, setSelected] = useState(null)
+
+  // Shared context — subscribes to version so Calendar mutations auto-refresh this view
+  const { version, invalidate } = useLessonsContext()
 
   // Debounce search
   const searchTimer = useRef(null)
   const [debouncedSearch, setDebouncedSearch] = useState('')
-
   useEffect(() => {
     clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => setDebouncedSearch(search), 350)
@@ -111,16 +105,17 @@ export default function LessonDashboardPage() {
     getTeachers().then(setTeachers).catch(() => {})
   }, [])
 
-  // Load lessons whenever filters/page change
+  // Load lessons whenever filters/page/version change
+  // version increments when the Calendar (or any other view) mutates a lesson
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
     const params = { page, page_size: PAGE_SIZE }
-    if (statusFilter) params.status = statusFilter
-    if (courseFilter) params.course_id = courseFilter
+    if (statusFilter)  params.status     = statusFilter
+    if (courseFilter)  params.course_id  = courseFilter
     if (teacherFilter) params.teacher_id = teacherFilter
-    if (dateFrom) params.date_from = dateFrom
-    if (dateTo) params.date_to = dateTo
+    if (dateFrom)      params.date_from  = dateFrom
+    if (dateTo)        params.date_to    = dateTo
 
     getDashboardLessons(params)
       .then((r) => setResult(r))
@@ -128,13 +123,12 @@ export default function LessonDashboardPage() {
       .finally(() => setLoading(false))
   }, [page, statusFilter, courseFilter, teacherFilter, dateFrom, dateTo])
 
-  useEffect(() => { load() }, [load])
+  // Re-run when filters change OR when context version increments (Calendar mutation)
+  useEffect(() => { load() }, [load, version])
 
   // Client-side search + sort on the current page's items
   const displayItems = useMemo(() => {
     let items = result.items || []
-
-    // Client-side search filter
     if (debouncedSearch) {
       const q = debouncedSearch.toLowerCase()
       items = items.filter(
@@ -145,8 +139,6 @@ export default function LessonDashboardPage() {
           (l.assigned_teacher_name || '').toLowerCase().includes(q)
       )
     }
-
-    // Client-side sort
     items = [...items].sort((a, b) => {
       let va = a[sortCol] ?? ''
       let vb = b[sortCol] ?? ''
@@ -156,32 +148,24 @@ export default function LessonDashboardPage() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-
     return items
   }, [result.items, debouncedSearch, sortCol, sortDir])
 
   const handleSort = (col) => {
-    if (sortCol === col) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortCol(col)
-      setSortDir('asc')
-    }
+    if (sortCol === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortCol(col); setSortDir('asc') }
   }
 
-  const handleFilterChange = (setter) => (e) => {
-    setter(e.target.value)
-    setPage(1)
-  }
+  const handleFilterChange = (setter) => (e) => { setter(e.target.value); setPage(1) }
 
   // Stats from current result
   const stats = useMemo(() => {
     const items = result.items || []
     return {
-      total: result.total,
+      total:      result.total,
       unassigned: items.filter((l) => l.status === 'unassigned').length,
-      urgent: items.filter((l) => l.within_a_week && l.status === 'unassigned').length,
-      assigned: items.filter((l) => l.status === 'assigned').length,
+      urgent:     items.filter((l) => l.within_a_week && l.status === 'unassigned').length,
+      assigned:   items.filter((l) => l.status === 'assigned').length,
     }
   }, [result])
 
@@ -191,6 +175,13 @@ export default function LessonDashboardPage() {
   })
 
   const hasFilters = statusFilter || courseFilter || teacherFilter || dateFrom || dateTo || search
+
+  // After a drawer mutation: reload this view + notify Calendar via context
+  const handleChanged = () => {
+    load()
+    invalidate()
+    setSelected(null)
+  }
 
   return (
     <>
@@ -207,21 +198,15 @@ export default function LessonDashboardPage() {
             <span className="ld-stat__label">Total</span>
           </div>
           <div className="ld-stat">
-            <span className="ld-stat__count" style={{ color: 'var(--status-red)' }}>
-              {stats.urgent}
-            </span>
+            <span className="ld-stat__count" style={{ color: 'var(--status-red)' }}>{stats.urgent}</span>
             <span className="ld-stat__label">Urgent</span>
           </div>
           <div className="ld-stat">
-            <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>
-              {stats.unassigned}
-            </span>
+            <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>{stats.unassigned}</span>
             <span className="ld-stat__label">Unassigned</span>
           </div>
           <div className="ld-stat">
-            <span className="ld-stat__count" style={{ color: 'var(--status-green)' }}>
-              {stats.assigned}
-            </span>
+            <span className="ld-stat__count" style={{ color: 'var(--status-green)' }}>{stats.assigned}</span>
             <span className="ld-stat__label">Assigned</span>
           </div>
         </div>
@@ -230,79 +215,31 @@ export default function LessonDashboardPage() {
         <div className="ld-toolbar">
           <div className="ld-toolbar__search">
             <SearchIcon />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search lesson, course, school, tutor…"
-            />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search lesson, course, school, tutor…" />
           </div>
 
-          <select
-            className="ld-filter-select"
-            value={statusFilter}
-            onChange={handleFilterChange(setStatusFilter)}
-          >
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
+          <select className="ld-filter-select" value={statusFilter} onChange={handleFilterChange(setStatusFilter)}>
+            {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
 
-          <select
-            className="ld-filter-select"
-            value={courseFilter}
-            onChange={handleFilterChange(setCourseFilter)}
-          >
+          <select className="ld-filter-select" value={courseFilter} onChange={handleFilterChange(setCourseFilter)}>
             <option value="">All courses</option>
-            {courses.map((c) => (
-              <option key={c.course_id} value={c.course_id}>
-                {c.course_name}
-              </option>
-            ))}
+            {courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
           </select>
 
-          <select
-            className="ld-filter-select"
-            value={teacherFilter}
-            onChange={handleFilterChange(setTeacherFilter)}
-          >
+          <select className="ld-filter-select" value={teacherFilter} onChange={handleFilterChange(setTeacherFilter)}>
             <option value="">All tutors</option>
-            {teachers.map((t) => (
-              <option key={t.teacher_id} value={t.teacher_id}>
-                {t.teacher_name}
-              </option>
-            ))}
+            {teachers.map((t) => <option key={t.teacher_id} value={t.teacher_id}>{t.teacher_name}</option>)}
           </select>
 
-          <input
-            type="date"
-            className="ld-filter-select"
-            value={dateFrom}
-            onChange={handleFilterChange(setDateFrom)}
-            title="From date"
-          />
-          <input
-            type="date"
-            className="ld-filter-select"
-            value={dateTo}
-            onChange={handleFilterChange(setDateTo)}
-            title="To date"
-          />
+          <input type="date" className="ld-filter-select" value={dateFrom} onChange={handleFilterChange(setDateFrom)} title="From date" />
+          <input type="date" className="ld-filter-select" value={dateTo}   onChange={handleFilterChange(setDateTo)}   title="To date" />
 
           {hasFilters && (
-            <button
-              className="btn btn--sm btn--ghost"
-              onClick={() => {
-                setSearch('')
-                setStatusFilter('')
-                setCourseFilter('')
-                setTeacherFilter('')
-                setDateFrom('')
-                setDateTo('')
-                setPage(1)
-              }}
-            >
+            <button className="btn btn--sm btn--ghost" onClick={() => {
+              setSearch(''); setStatusFilter(''); setCourseFilter('')
+              setTeacherFilter(''); setDateFrom(''); setDateTo(''); setPage(1)
+            }}>
               Clear filters
             </button>
           )}
@@ -310,12 +247,7 @@ export default function LessonDashboardPage() {
 
         {/* Table */}
         <div className="ld-table-wrap">
-          {error && (
-            <div style={{ padding: '16px 20px', color: 'var(--status-red)', fontSize: 13.5 }}>
-              Error: {error}
-            </div>
-          )}
-
+          {error && <div style={{ padding: '16px 20px', color: 'var(--status-red)', fontSize: 13.5 }}>Error: {error}</div>}
           {loading && !error && <div className="spinner" />}
 
           {!loading && !error && displayItems.length === 0 && (
@@ -330,21 +262,11 @@ export default function LessonDashboardPage() {
             <table className="ld-table">
               <thead>
                 <tr>
-                  <th {...thProps('lesson_code')}>
-                    Lesson ID <SortIcon dir={sortCol === 'lesson_code' ? sortDir : null} />
-                  </th>
-                  <th {...thProps('course_name')}>
-                    Course <SortIcon dir={sortCol === 'course_name' ? sortDir : null} />
-                  </th>
-                  <th {...thProps('lesson_date')}>
-                    Date &amp; Time <SortIcon dir={sortCol === 'lesson_date' ? sortDir : null} />
-                  </th>
-                  <th {...thProps('status')}>
-                    Status <SortIcon dir={sortCol === 'status' ? sortDir : null} />
-                  </th>
-                  <th {...thProps('assigned_teacher_name')}>
-                    Tutor <SortIcon dir={sortCol === 'assigned_teacher_name' ? sortDir : null} />
-                  </th>
+                  <th {...thProps('lesson_code')}>Lesson ID <SortIcon dir={sortCol === 'lesson_code' ? sortDir : null} /></th>
+                  <th {...thProps('course_name')}>Course <SortIcon dir={sortCol === 'course_name' ? sortDir : null} /></th>
+                  <th {...thProps('lesson_date')}>Date &amp; Time <SortIcon dir={sortCol === 'lesson_date' ? sortDir : null} /></th>
+                  <th {...thProps('status')}>Status <SortIcon dir={sortCol === 'status' ? sortDir : null} /></th>
+                  <th {...thProps('assigned_teacher_name')}>Tutor <SortIcon dir={sortCol === 'assigned_teacher_name' ? sortDir : null} /></th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -355,11 +277,7 @@ export default function LessonDashboardPage() {
                     (lesson.status || '').toLowerCase()
                   )
                   return (
-                    <tr
-                      key={lesson.id}
-                      className="clickable"
-                      onClick={() => setSelected(lesson)}
-                    >
+                    <tr key={lesson.id} className="clickable" onClick={() => setSelected(lesson)}>
                       <td>
                         <span className="ld-lesson-code">{lesson.lesson_code || '—'}</span>
                       </td>
@@ -371,17 +289,12 @@ export default function LessonDashboardPage() {
                         <div className="ld-datetime">
                           <div className="ld-date">
                             {lesson.within_a_week && needsAction && (
-                              <span
-                                className="ld-urgent-dot"
-                                style={{ background: 'var(--status-red)' }}
-                                title="Within a week — urgent"
-                              />
+                              <span className="ld-urgent-dot" style={{ background: 'var(--status-red)' }} title="Within a week — urgent" />
                             )}
                             {fmtDate(lesson.lesson_date)}
                           </div>
                           <div className="ld-time">
-                            {fmtTime(lesson.start_time)}
-                            {lesson.end_time ? ` – ${fmtTime(lesson.end_time)}` : ''}
+                            {fmtTime(lesson.start_time)}{lesson.end_time ? ` – ${fmtTime(lesson.end_time)}` : ''}
                           </div>
                         </div>
                       </td>
@@ -392,17 +305,12 @@ export default function LessonDashboardPage() {
                         </span>
                       </td>
                       <td>
-                        {lesson.assigned_teacher_name ? (
-                          <span className="ld-teacher">{lesson.assigned_teacher_name}</span>
-                        ) : (
-                          <span className="ld-teacher ld-teacher--none">—</span>
-                        )}
+                        {lesson.assigned_teacher_name
+                          ? <span className="ld-teacher">{lesson.assigned_teacher_name}</span>
+                          : <span className="ld-teacher ld-teacher--none">—</span>}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        <button
-                          className="ld-assign-btn"
-                          onClick={() => setSelected(lesson)}
-                        >
+                        <button className="ld-assign-btn" onClick={() => setSelected(lesson)}>
                           {needsAction ? 'Assign tutor' : 'View details'}
                         </button>
                       </td>
@@ -416,17 +324,9 @@ export default function LessonDashboardPage() {
           {/* Pagination */}
           {!loading && result.pages > 1 && (
             <div className="ld-pagination">
-              <span>
-                {result.total} lessons · Page {page} of {result.pages}
-              </span>
+              <span>{result.total} lessons · Page {page} of {result.pages}</span>
               <div className="ld-pagination__pages">
-                <button
-                  className="ld-pagination__btn"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  ← Prev
-                </button>
+                <button className="ld-pagination__btn" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>← Prev</button>
                 {Array.from({ length: Math.min(result.pages, 7) }, (_, i) => {
                   const totalPages = result.pages
                   let start = Math.max(1, page - 3)
@@ -435,37 +335,25 @@ export default function LessonDashboardPage() {
                   const pageNum = start + i
                   if (pageNum > totalPages) return null
                   return (
-                    <button
-                      key={pageNum}
-                      className={`ld-pagination__btn${page === pageNum ? ' active' : ''}`}
-                      onClick={() => setPage(pageNum)}
-                    >
+                    <button key={pageNum} className={`ld-pagination__btn${page === pageNum ? ' active' : ''}`} onClick={() => setPage(pageNum)}>
                       {pageNum}
                     </button>
                   )
                 })}
-                <button
-                  className="ld-pagination__btn"
-                  disabled={page >= result.pages}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next →
-                </button>
+                <button className="ld-pagination__btn" disabled={page >= result.pages} onClick={() => setPage((p) => p + 1)}>Next →</button>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Assign tutor drawer */}
+      {/* Unified LessonDetailDrawer — same component as the Calendar */}
       {selected && (
-        <AssignTutorDrawer
+        <LessonDetailDrawer
           lesson={selected}
           onClose={() => setSelected(null)}
-          onChanged={() => {
-            load()
-            setSelected(null)
-          }}
+          onChanged={handleChanged}
+          sourceView="dashboard"
         />
       )}
     </>

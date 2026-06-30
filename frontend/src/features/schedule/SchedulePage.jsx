@@ -6,6 +6,7 @@ import NewLessonModal from './NewLessonModal'
 import { DayView, MonthView, WeekView } from './views'
 import { addDays, addMonths, addWeeks, periodLabel, rangeFor } from './dates'
 import { useSchedule } from './useSchedule'
+import { useLessonsContext } from '../../context/LessonsContext'
 import './schedule.css'
 
 const VIEWS = ['month', 'week', 'day']
@@ -34,6 +35,7 @@ export default function SchedulePage() {
 
   const { start, end } = useMemo(() => rangeFor(view, anchor), [view, anchor])
   const { lessons, loading, error, reload } = useSchedule(start, end)
+  const { invalidate } = useLessonsContext()
 
   const step = (dir) => {
     const fn = view === 'month' ? addMonths : view === 'week' ? addWeeks : addDays
@@ -44,6 +46,12 @@ export default function SchedulePage() {
 
   // keep the open drawer in sync with refreshed data
   const selectedLive = selected ? lessons.find((l) => l.id === selected.id) || selected : null
+
+  // After any mutation: reload this view + notify the Dashboard via context
+  const handleChanged = () => {
+    reload()
+    invalidate()
+  }
 
   return (
     <>
@@ -95,9 +103,14 @@ export default function SchedulePage() {
       </div>
 
       {selectedLive && (
-        <LessonDetailDrawer lesson={selectedLive} onClose={() => setSelected(null)} onChanged={reload} />
+        <LessonDetailDrawer
+          lesson={selectedLive}
+          onClose={() => setSelected(null)}
+          onChanged={handleChanged}
+          sourceView="schedule"
+        />
       )}
-      {creating && <NewLessonModal onClose={() => setCreating(false)} onCreated={reload} />}
+      {creating && <NewLessonModal onClose={() => setCreating(false)} onCreated={handleChanged} />}
     </>
   )
 }

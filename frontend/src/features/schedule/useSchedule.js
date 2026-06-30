@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getSchedule } from '../../services/endpoints'
+import { useLessonsContext } from '../../context/LessonsContext'
 
-// Fetch the schedule for an ISO date range; re-runs when the range changes.
+/**
+ * Fetch the schedule for an ISO date range.
+ * Re-runs when the range changes OR when LessonsContext.version increments
+ * (i.e. when the Dashboard or any other view mutates a lesson).
+ */
 export function useSchedule(start, end) {
   const [lessons, setLessons] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const { version } = useLessonsContext()
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -15,7 +21,8 @@ export function useSchedule(start, end) {
       .finally(() => setLoading(false))
   }, [start, end])
 
-  useEffect(() => { reload() }, [reload])
+  // Re-fetch when date range changes OR when global version increments
+  useEffect(() => { reload() }, [reload, version])
 
   return { lessons, loading, error, reload }
 }
