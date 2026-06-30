@@ -1,4 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+import os
 
 
 class Settings(BaseSettings):
@@ -9,6 +11,22 @@ class Settings(BaseSettings):
 
     # Comma-separated list of origins allowed to call the API (CORS).
     CORS_ORIGINS: str = "http://localhost:5173"
+
+    # JWT Authentication Security
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+
+    # Admin credentials for initial login
+    ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@vinciautomation.com")
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+
+    @field_validator("ADMIN_PASSWORD")
+    def validate_admin_password(cls, v):
+        if not v:
+            raise ValueError("ADMIN_PASSWORD must be set for initial admin user creation")
+        return v
 
     # --- Supabase (set in .env) -------------------------------------------
     # Backend uses the service_role key, which bypasses RLS. Keep it secret.

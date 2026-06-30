@@ -6,3 +6,6 @@ python-dotenv
 httpx
 openpyxl
 APScheduler
+python-jose[cryptography]
+passlib[bcrypt]
+cryptography

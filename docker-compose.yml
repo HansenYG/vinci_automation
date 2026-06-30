@@ -1,0 +1,101 @@
+version: '3.8'
+
+# Vinci Automation Docker Compose
+# Optimized for local development with Supabase
+
+services:
+  backend:
+    build: .
+    container_name: vinci_automation_backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Supabase configuration (use dockerized version)
+      SUPABASE_URL: http://supabase_db:54321
+      SUPABASE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODQ3OTU2MDAsImV4cCI6MTkxNjI1NzYwMH0.jS4m0rSfPoG5Rc5v8Vx6qNq6vZ5Wv5mRf5vXvXvXf5vP5v8Vx6qNq6vZ5Wv5mRf5
+      # Auth configuration
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-super-secret-jwt-key-here-change-in-production}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@vinciautomation.com}
+      # WATI/WhatsApp configuration
+      WATI_API_URL: ${WATI_API_URL}
+      WATI_ACCESS_TOKEN: ${WATI_ACCESS_TOKEN}
+      WATI_WEBHOOK_SECRET: ${WATI_WEBHOOK_SECRET:-change-me}
+      # LLM configuration
+      LLM_PROVIDER: ollama
+      LLM_BASE_URL: http://ollama:11434
+      # CORS for frontend
+      CORS_ORIGINS: http://localhost:5173
+    volumes:
+      - ./backend/.env:/app/.env:ro
+      - ./backend/app:/app/app:ro
+      - ./backend/Procfile:/app/Procfile:ro
+    depends_on:
+      - supabase_db
+      - ollama
+    restart: unless-stopped
+    networks:
+      - vinci_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vinci_automation_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - vinci_network
+
+  supabase_db:
+    image: supabase/storage:latest
+    container_name: supabase_db
+    ports:
+      - "54321:54321"
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - supabase_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - vinci_network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - vinci_network
+    # Pull default model for chatbot
+    command: >-
+      sh -c '
+      ollama pull llama3.1 2>&1 || echo "Model pull failed, continue anyway"
+      tail -f /dev/null
+      '
+
+volumes:
+  supabase_data:
+  ollama_data:
+
+networks:
+  vinci_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
