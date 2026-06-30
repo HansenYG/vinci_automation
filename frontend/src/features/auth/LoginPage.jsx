@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import './auth.css'
 
@@ -19,17 +18,16 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  const navigate = useNavigate()
-  const location = useLocation()
-  const from = location.state?.from?.pathname || '/schedule'
 
+  // Navigation is handled by RedirectIfAuthed once the profile resolves.
+  // Do NOT call navigate() here — it races with the onAuthStateChange handler.
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
       await signInWithPassword(email.trim(), password)
-      navigate(from, { replace: true })
+      // signInWithPassword triggers onAuthStateChange → refreshProfile → RedirectIfAuthed navigates
     } catch {
       // error surfaced via context
     } finally {
