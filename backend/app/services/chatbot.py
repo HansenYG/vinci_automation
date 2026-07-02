@@ -1,26 +1,29 @@
 """Chatbot service — the admin's natural-language interface to the database.
 
 Routing:
-  * If Ollama is reachable, the LLM answers everything — grounded with a live
+  * If the LLM is reachable, it answers everything — grounded with a live
     DB snapshot (counts + upcoming / unassigned / urgent lessons) so it can both
     reason/summarise AND answer operational questions accurately.
-  * If Ollama is down, fall back to deterministic DB answers (so the common
+  * If the LLM is down, fall back to deterministic DB answers (so the common
     operational queries still work offline), then a friendly offline message.
 
-Data *input* and bulk *export* are handled by the REST endpoints and export.py;
-the chat layer points the admin at them.
+Data modification (reschedule, create, delete):
+  When the user asks to modify data the LLM outputs a JSON action block which
+  the backend surfaces to the frontend as a pendingAction.  The frontend asks
+  the user to confirm before the backend executes it.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime
 
 import httpx
 from supabase import Client
 
 from app.core.config import settings
-from app.services import repos
+from app.services import repos, codes
 
 # Preset prompts surfaced as one-click buttons in the UI.
 PRESETS = [
@@ -134,8 +137,21 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     system = (
         "You are the Vinci Automation admin assistant for a tutoring company. "
         "Be concise and helpful. Base every fact ONLY on the data snapshot below — "
-        "if it isn't there, say you don't have that detail rather than guessing. "
-        "To change data, tell the user to use the Data tab / input forms.\n\n"
+        "if it isn't there, say you don't have that detail rather than guessing.\n\n"
+        "You can RESCHEDULE, CREATE, and DELETE lessons. "
+        "When the user asks you to modify data, FIRST explain what you will do, "
+        "then output an EXACT JSON block on its own line like this:\n"
+        'ACTION:{"operation":"reschedule|create|delete","params":{...}}\n'
+        "The JSON must contain:\n"
+        '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
+        '  - For "create": {"course_id":"...", "date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
+        '  - For "delete": {"lesson_id":"..."}\n'
+        "Do NOT execute the action yourself — just output the ACTION: line. "
+        "The system will ask the user to confirm before executing.\n\n"
+        "Example:\n"
+        'User: "Move the IGCSE Physics lesson on July 10 to 16:00"\n'
+        "Assistant: I can reschedule lesson L-2026-010 (IGCSE Physics) from July 10 14:00 to July 10 16:00. Shall I proceed?\n"
+        'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n"
         f"TODAY is {day_name} {today} (YYYY-MM-DD). "
         "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
         "'next week', 'this week', 'next Monday', etc. "
@@ -168,8 +184,73 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
     # deterministic DB answers, then the offline message.
     res = _llm_reply(db, message, history or [])
     if res["source"] != "fallback":
+        # Check for ACTION: JSON block in the reply
+        reply = res.get("reply", "")
+        match = re.search(r'^ACTION:\s*(\{.*\})\s*$', reply, re.MULTILINE)
+        if match:
+            try:
+                action_data = json.loads(match.group(1))
+                # Strip the ACTION line from the displayed reply
+                clean_reply = re.sub(r'^ACTION:\s*\{.*\}\s*', '', reply, flags=re.MULTILINE).strip()
+                res["reply"] = clean_reply
+                res["pendingAction"] = action_data
+            except (json.JSONDecodeError, ValueError):
+                pass
         return res
     return _deterministic_answer(db, message) or res
+
+
+# --- Execute pending actions (after user confirmation) -----------------------
+
+def execute_operation(db: Client, operation: str, params: dict) -> dict:
+    """Execute a user-confirmed data-modifying operation."""
+    if operation == "reschedule":
+        lesson_code = params.get("lesson_id")
+        if not lesson_code:
+            return {"ok": False, "error": "Missing lesson_id"}
+        # Resolve lesson_code to uuid if needed
+        lessons = db.table("lessons").select("id").eq("lesson_id", lesson_code).limit(1).execute().data
+        if not lessons:
+            return {"ok": False, "error": f"Lesson {lesson_code} not found"}
+        lesson_id = lessons[0]["id"]
+        updates = {}
+        if params.get("date"): updates["date"] = params["date"]
+        if params.get("start_time"): updates["start_time"] = params["start_time"]
+        if params.get("end_time"): updates["end_time"] = params["end_time"]
+        if not updates:
+            return {"ok": False, "error": "No fields to update"}
+        repos.update_row(db, "lessons", lesson_id, updates)
+        return {"ok": True, "message": f"Lesson {lesson_code} updated."}
+
+    if operation == "create":
+        course_id = params.get("course_id")
+        date_val = params.get("date")
+        if not course_id or not date_val:
+            return {"ok": False, "error": "Missing course_id or date"}
+        lesson_code = codes.next_lesson_code(db, date=date_val, start_time=params.get("start_time"), course_name=params.get("course_name"))
+        payload = {
+            "date": date_val,
+            "lesson_id": lesson_code,
+            "course_id": course_id,
+            "status": "Unassigned",
+            "max_tutors": params.get("max_tutors", 1),
+        }
+        if params.get("start_time"): payload["start_time"] = params["start_time"]
+        if params.get("end_time"): payload["end_time"] = params["end_time"]
+        repos.insert_row(db, "lessons", payload)
+        return {"ok": True, "message": f"Lesson {lesson_code} created."}
+
+    if operation == "delete":
+        lesson_code = params.get("lesson_id")
+        if not lesson_code:
+            return {"ok": False, "error": "Missing lesson_id"}
+        lessons = db.table("lessons").select("id").eq("lesson_id", lesson_code).limit(1).execute().data
+        if not lessons:
+            return {"ok": False, "error": f"Lesson {lesson_code} not found"}
+        repos.delete_row(db, "lessons", lessons[0]["id"])
+        return {"ok": True, "message": f"Lesson {lesson_code} deleted."}
+
+    return {"ok": False, "error": f"Unknown operation '{operation}'"}
 
 
 def select_tutor_ids(db: Client, *, course: str, school: str, topic: str = "", limit: int = 6) -> tuple[list[str], bool]:

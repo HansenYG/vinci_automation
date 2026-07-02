@@ -3,6 +3,7 @@ and one-click preset operations."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from supabase import Client
 
 from app.core.database import get_supabase
@@ -10,6 +11,11 @@ from app.schemas.requests import ChatRequest
 from app.services import chatbot, export, repos
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+class ExecuteRequest(BaseModel):
+    operation: str
+    params: dict = {}
 
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -24,6 +30,12 @@ def presets():
 def chat(body: ChatRequest, db: Client = Depends(get_supabase)):
     history = [m.model_dump() for m in body.history]
     return chatbot.answer(db, body.message, history)
+
+
+@router.post("/execute")
+def execute_action(body: ExecuteRequest, db: Client = Depends(get_supabase)):
+    """Execute a user-confirmed data-modifying operation."""
+    return chatbot.execute_operation(db, body.operation, body.params)
 
 
 @router.get("/export/{dataset}")
