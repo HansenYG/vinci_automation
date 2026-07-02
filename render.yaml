@@ -1,5 +1,5 @@
-# Render blueprint for the Vinci Automation backend.
-# Deploy: push to GitHub, then in Render -> New -> Blueprint, point at this repo.
+# Render blueprint for the Vinci Automation production backend.
+# Deploy: push to GitHub `main` branch; Render auto-deploys via this blueprint.
 # Fill the `sync: false` secrets in the Render dashboard (never commit them).
 services:
   - type: web

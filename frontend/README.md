@@ -1,16 +1,40 @@
-# React + Vite
+# Vinci Automation — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite application deployed on Vercel.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Schedule** — Month/Week/Day calendar view with colour-coded lesson chips
+- **Lesson Dashboard** — Stat cards, filters (status/course/tutor/date/search), sortable table
+- **Chatbot / Dock** — AI admin assistant with preset buttons, chat history, and Data tab (quick lesson creation + Excel export)
+- **Finances** (scaffolded)
+- **Urgent News** (scaffolded)
+- **Auth** — Supabase Auth with session persistence, role-gating
 
-## React Compiler
+## Key files
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| File | Purpose |
+|------|---------|
+| `src/features/schedule/SchedulePage.jsx` | Schedule calendar with views, zoom, chips |
+| `src/features/lessonDashboard/LessonDashboardPage.jsx` | Lesson dashboard with stats, filters, table |
+| `src/features/chatbot/ChatPanel.jsx` | AI chatbot UI with confirmation buttons |
+| `src/features/chatbot/ChatDock.jsx` | Dock panel (Chat + Data tabs) |
+| `src/features/chatbot/dockContext.js` | Dock state (open/closed) |
+| `src/services/endpoints.js` | API wrappers |
+| `src/services/api.js` | Axios instance with auth interceptor |
 
-## Expanding the ESLint configuration
+## Environment
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```env
+VITE_API_BASE_URL=http://localhost:8000
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server (Vite) |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |
