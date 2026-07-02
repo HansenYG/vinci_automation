@@ -157,12 +157,16 @@ export default function LessonDashboardPage() {
 
   const handleFilterChange = (setter) => (e) => { setter(e.target.value); setPage(1) }
 
-  // Stats: computed from the full result set
+  // Stats: computed from the current page's items.
+  // The default (action-needed) view fetches all matching records server-side
+  // so stats are accurate for that view.  When filters or "Show all" are active
+  // the backend paginates at the query level, so per-status counts reflect only
+  // the current page.
   const stats = useMemo(() => {
     const items = result.items || []
     return {
       total:         result.total,
-      unassigned:    items.filter((l) => ['unassigned', 'offersent'].includes((l.status || '').toLowerCase())).length,
+      noAcceptance:  items.filter((l) => ['unassigned', 'offersent'].includes((l.status || '').toLowerCase())).length,
       hasAcceptance: items.filter((l) => (l.status || '').toLowerCase() === 'hasacceptance').length,
       urgent:        items.filter((l) => l.within_a_week && ['unassigned', 'offersent', 'hasacceptance'].includes((l.status || '').toLowerCase())).length,
     }
@@ -205,8 +209,8 @@ export default function LessonDashboardPage() {
             <span className="ld-stat__label">Urgent (≤7 days)</span>
           </div>
           <div className="ld-stat">
-            <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>{stats.unassigned}</span>
-            <span className="ld-stat__label">No Acceptances</span>
+            <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>{stats.noAcceptance}</span>
+            <span className="ld-stat__label">Unassigned / Offer Sent</span>
           </div>
           <div className="ld-stat">
             <span className="ld-stat__count" style={{ color: 'var(--status-green)' }}>{stats.hasAcceptance}</span>

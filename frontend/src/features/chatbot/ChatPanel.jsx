@@ -11,6 +11,13 @@ const GREETING = {
   source: 'system',
 }
 
+const SOURCE_LABELS = {
+  openai: 'AI',
+  system: 'System',
+  database: 'Database',
+  error: 'Error',
+}
+
 function loadHistory() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -82,7 +89,7 @@ export default function ChatPanel() {
             <div className="bubble">
               {m.content}
               {m.role === 'assistant' && m.source && m.source !== 'system' && (
-                <div className="bubble__src">{m.source}</div>
+                <div className="bubble__src">{SOURCE_LABELS[m.source] || m.source}</div>
               )}
             </div>
           </div>
