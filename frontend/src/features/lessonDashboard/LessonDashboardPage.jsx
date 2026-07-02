@@ -8,14 +8,10 @@ import './lessonDashboard.css'
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'All statuses' },
+  { value: '', label: 'All action-needed' },
   { value: 'unassigned', label: 'Unassigned' },
   { value: 'offersent', label: 'Offer Sent' },
   { value: 'hasacceptance', label: 'Has Acceptance' },
-  { value: 'assigned', label: 'Assigned' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
-  { value: 'rescheduled', label: 'Rescheduled' },
 ]
 
 const STATUS_META = {
@@ -71,6 +67,7 @@ export default function LessonDashboardPage() {
   const [teacherFilter, setTeacherFilter] = useState('')
   const [dateFrom, setDateFrom]       = useState('')
   const [dateTo, setDateTo]           = useState('')
+  const [showAll, setShowAll]         = useState(false)
 
   // Pagination + sort
   const [page, setPage]       = useState(1)
@@ -84,10 +81,10 @@ export default function LessonDashboardPage() {
   const [courses, setCourses] = useState([])
   const [teachers, setTeachers] = useState([])
 
-  // Drawer — uses the unified LessonDetailDrawer
+  // Drawer
   const [selected, setSelected] = useState(null)
 
-  // Shared context — subscribes to version so Calendar mutations auto-refresh this view
+  // Shared context
   const { version, invalidate } = useLessonsContext()
 
   // Debounce search
@@ -106,7 +103,6 @@ export default function LessonDashboardPage() {
   }, [])
 
   // Load lessons whenever filters/page/version change
-  // version increments when the Calendar (or any other view) mutates a lesson
   const load = useCallback(() => {
     setLoading(true)
     setError(null)
@@ -116,14 +112,14 @@ export default function LessonDashboardPage() {
     if (teacherFilter) params.teacher_id = teacherFilter
     if (dateFrom)      params.date_from  = dateFrom
     if (dateTo)        params.date_to    = dateTo
+    if (showAll)       params.show_all   = true
 
     getDashboardLessons(params)
       .then((r) => setResult(r))
       .catch((e) => setError(e?.response?.data?.detail || 'Failed to load lessons'))
       .finally(() => setLoading(false))
-  }, [page, statusFilter, courseFilter, teacherFilter, dateFrom, dateTo])
+  }, [page, statusFilter, courseFilter, teacherFilter, dateFrom, dateTo, showAll])
 
-  // Re-run when filters change OR when context version increments (Calendar mutation)
   useEffect(() => { load() }, [load, version])
 
   // Client-side search + sort on the current page's items
@@ -139,17 +135,20 @@ export default function LessonDashboardPage() {
           (l.assigned_teacher_name || '').toLowerCase().includes(q)
       )
     }
-    items = [...items].sort((a, b) => {
-      let va = a[sortCol] ?? ''
-      let vb = b[sortCol] ?? ''
-      if (typeof va === 'string') va = va.toLowerCase()
-      if (typeof vb === 'string') vb = vb.toLowerCase()
-      if (va < vb) return sortDir === 'asc' ? -1 : 1
-      if (va > vb) return sortDir === 'asc' ? 1 : -1
-      return 0
-    })
+    // Only sort when showing all (default view preserves server-side urgency sort)
+    if (showAll || statusFilter) {
+      items = [...items].sort((a, b) => {
+        let va = a[sortCol] ?? ''
+        let vb = b[sortCol] ?? ''
+        if (typeof va === 'string') va = va.toLowerCase()
+        if (typeof vb === 'string') vb = vb.toLowerCase()
+        if (va < vb) return sortDir === 'asc' ? -1 : 1
+        if (va > vb) return sortDir === 'asc' ? 1 : -1
+        return 0
+      })
+    }
     return items
-  }, [result.items, debouncedSearch, sortCol, sortDir])
+  }, [result.items, debouncedSearch, sortCol, sortDir, showAll, statusFilter])
 
   const handleSort = (col) => {
     if (sortCol === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -158,14 +157,14 @@ export default function LessonDashboardPage() {
 
   const handleFilterChange = (setter) => (e) => { setter(e.target.value); setPage(1) }
 
-  // Stats from current result
+  // Stats: computed from the full result set
   const stats = useMemo(() => {
     const items = result.items || []
     return {
-      total:      result.total,
-      unassigned: items.filter((l) => l.status === 'unassigned').length,
-      urgent:     items.filter((l) => l.within_a_week && l.status === 'unassigned').length,
-      assigned:   items.filter((l) => l.status === 'assigned').length,
+      total:         result.total,
+      unassigned:    items.filter((l) => ['unassigned', 'offersent'].includes((l.status || '').toLowerCase())).length,
+      hasAcceptance: items.filter((l) => (l.status || '').toLowerCase() === 'hasacceptance').length,
+      urgent:        items.filter((l) => l.within_a_week && ['unassigned', 'offersent', 'hasacceptance'].includes((l.status || '').toLowerCase())).length,
     }
   }, [result])
 
@@ -176,18 +175,22 @@ export default function LessonDashboardPage() {
 
   const hasFilters = statusFilter || courseFilter || teacherFilter || dateFrom || dateTo || search
 
-  // After a drawer mutation: reload this view + notify Calendar via context
   const handleChanged = () => {
     load()
     invalidate()
     setSelected(null)
   }
 
+  const clearFilters = () => {
+    setSearch(''); setStatusFilter(''); setCourseFilter('')
+    setTeacherFilter(''); setDateFrom(''); setDateTo(''); setPage(1)
+  }
+
   return (
     <>
       <PageHeader
         title="Lesson Dashboard"
-        subtitle="All lessons — sorted by date. Assign tutors, track status, and manage lesson details."
+        subtitle="Action-needed lessons — assign tutors, track status, and manage lesson details."
       />
 
       <div className="content">
@@ -195,20 +198,33 @@ export default function LessonDashboardPage() {
         <div className="ld-stats">
           <div className="ld-stat">
             <span className="ld-stat__count">{stats.total}</span>
-            <span className="ld-stat__label">Total</span>
+            <span className="ld-stat__label">Needs Action</span>
           </div>
           <div className="ld-stat">
             <span className="ld-stat__count" style={{ color: 'var(--status-red)' }}>{stats.urgent}</span>
-            <span className="ld-stat__label">Urgent</span>
+            <span className="ld-stat__label">Urgent (≤7 days)</span>
           </div>
           <div className="ld-stat">
             <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>{stats.unassigned}</span>
-            <span className="ld-stat__label">Unassigned</span>
+            <span className="ld-stat__label">No Acceptances</span>
           </div>
           <div className="ld-stat">
-            <span className="ld-stat__count" style={{ color: 'var(--status-green)' }}>{stats.assigned}</span>
-            <span className="ld-stat__label">Assigned</span>
+            <span className="ld-stat__count" style={{ color: 'var(--status-green)' }}>{stats.hasAcceptance}</span>
+            <span className="ld-stat__label">Has Acceptance</span>
           </div>
+        </div>
+
+        {/* Show-all toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={showAll}
+              onChange={(e) => { setShowAll(e.target.checked); setPage(1) }}
+              style={{ accentColor: 'var(--accent)', width: 15, height: 15 }}
+            />
+            Show all lessons (including assigned, completed, cancelled)
+          </label>
         </div>
 
         {/* Toolbar */}
@@ -218,9 +234,12 @@ export default function LessonDashboardPage() {
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search lesson, course, school, tutor…" />
           </div>
 
-          <select className="ld-filter-select" value={statusFilter} onChange={handleFilterChange(setStatusFilter)}>
-            {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          {/* Status filter — only show action-needed options unless showAll */}
+          {!showAll && (
+            <select className="ld-filter-select" value={statusFilter} onChange={handleFilterChange(setStatusFilter)}>
+              {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          )}
 
           <select className="ld-filter-select" value={courseFilter} onChange={handleFilterChange(setCourseFilter)}>
             <option value="">All courses</option>
@@ -236,14 +255,23 @@ export default function LessonDashboardPage() {
           <input type="date" className="ld-filter-select" value={dateTo}   onChange={handleFilterChange(setDateTo)}   title="To date" />
 
           {hasFilters && (
-            <button className="btn btn--sm btn--ghost" onClick={() => {
-              setSearch(''); setStatusFilter(''); setCourseFilter('')
-              setTeacherFilter(''); setDateFrom(''); setDateTo(''); setPage(1)
-            }}>
+            <button className="btn btn--sm btn--ghost" onClick={clearFilters}>
               Clear filters
             </button>
           )}
         </div>
+
+        {/* Sort info banner — only in default (urgency) mode */}
+        {!showAll && !statusFilter && (
+          <div style={{
+            fontSize: 12.5, color: 'var(--muted)', padding: '6px 0 2px',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <span style={{ fontWeight: 600, color: 'var(--status-red)' }}>Bucket 1:</span> No acceptances (Unassigned / Offer Sent) — closest date first
+            &nbsp;·&nbsp;
+            <span style={{ fontWeight: 600, color: 'var(--status-yellow)' }}>Bucket 2:</span> Has Acceptance — closest date first
+          </div>
+        )}
 
         {/* Table */}
         <div className="ld-table-wrap">
@@ -252,9 +280,11 @@ export default function LessonDashboardPage() {
 
           {!loading && !error && displayItems.length === 0 && (
             <div className="ld-empty">
-              <div className="ld-empty__icon">📋</div>
-              <div className="ld-empty__text">No lessons found</div>
-              <div className="ld-empty__sub">Try adjusting your filters</div>
+              <div className="ld-empty__icon">✅</div>
+              <div className="ld-empty__text">{showAll ? 'No lessons found' : 'No action needed'}</div>
+              <div className="ld-empty__sub">
+                {showAll ? 'Try adjusting your filters' : 'All lessons are assigned — great work!'}
+              </div>
             </div>
           )}
 
@@ -266,7 +296,6 @@ export default function LessonDashboardPage() {
                   <th {...thProps('course_name')}>Course <SortIcon dir={sortCol === 'course_name' ? sortDir : null} /></th>
                   <th {...thProps('lesson_date')}>Date &amp; Time <SortIcon dir={sortCol === 'lesson_date' ? sortDir : null} /></th>
                   <th {...thProps('status')}>Status <SortIcon dir={sortCol === 'status' ? sortDir : null} /></th>
-                  <th {...thProps('assigned_teacher_name')}>Tutor <SortIcon dir={sortCol === 'assigned_teacher_name' ? sortDir : null} /></th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -303,11 +332,6 @@ export default function LessonDashboardPage() {
                           <span className={`dot bg-${sm.color}`} />
                           {sm.label}
                         </span>
-                      </td>
-                      <td>
-                        {lesson.assigned_teacher_name
-                          ? <span className="ld-teacher">{lesson.assigned_teacher_name}</span>
-                          : <span className="ld-teacher ld-teacher--none">—</span>}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <button className="ld-assign-btn" onClick={() => setSelected(lesson)}>
@@ -347,7 +371,7 @@ export default function LessonDashboardPage() {
         </div>
       </div>
 
-      {/* Unified LessonDetailDrawer — same component as the Calendar */}
+      {/* Unified LessonDetailDrawer */}
       {selected && (
         <LessonDetailDrawer
           lesson={selected}

@@ -1,0 +1,385 @@
+
+
+Business Rules
+Vinci Automation
+Version 1.2  |  June 2026
+Canonical business logic for teacher availability, lesson scheduling,
+WhatsApp offer/accept, assignment, and month-end finances.
+
+Document Control
+Version 1.2 | Last updated 2026-06-22.
+Precedence when documents disagree:
+this Business Logic document (canonical rules);
+Revised Database Design.xlsx (column-level detail);
+UI designs / mock-ups (layout only).
+When a rule changes, update this document first, then realign the others.
+Conventions
+Timezone: all dates and times in this system are Asia/Hong Kong (HKT) wall-clock. "Today", "within a week", and "the 1st of the month" are all evaluated in HKT.
+Currency: all monetary values are in HKD; no currency conversion is performed.
+Note: Appendix A contains the Open Decisions register (all 8 decisions now resolved). Appendix B contains the Outstanding Additions checklist (all items now marked [Applied]). Both appendices reference the sections where each item is addressed. Future changes must update this document first, then realign the database design and UI.
+1. Product Purpose
+Problem Statement: Operations dealing with lesson scheduling & tutor assignment is time intensive and requires a lot of human effort which could be used for other more productive tasks such as preparing lesson plans more thoroughly. Therefore, it would be preferable to create an all in one system which improves the speed & efficiency of operations whilst maintaining and improving upon the accuracy of assignments.
+Vinci Automation supports operational tasks which include the following:
+Teacher availability & info submission
+New lesson scheduling and message blast to all available teachers
+Teacher acceptance handling & admin picking suitable teachers
+Teacher cancellation/rescheduling requests and handling
+Checks for lessons with assigned/unassigned teachers (with admin reminders)
+Reporting monthly course financials & teacher salaries
+Scale
+V1 would be 1 admin and 20 teachers.
+V2 expanded to 2-3 admins and 50 teachers.
+V3 can support all Vinci staff dealing with operations & all teachers.
+Feature scope by version
+The scale points above set headcount only. The table below sets which features ship in each version. Rows marked (confirm) need team sign-off (see Appendix A).
+2. Users
+3. Authentication
+Sign-in is required for all users. Admins must use a Vinci-domain email with Google OAuth or email + password. Teachers may use any email that matches their pre-registered teacher record email, via Google OAuth or email + password.
+Admin users are operations managers and any Vinci staff who handle lesson scheduling and tutor coordination. Admins have full read/write access to all system data, subject to database integrity constraints.
+Teachers should only have access to the teacher input data & availability page, they can only see their own data & a schedule with only their classes (isolate data for each teacher so they can only see theirs).
+No public self-registration. Teacher records are created by an admin or a Vinci-email holder. Once a teacher record exists, the teacher may sign in with any email matching their teacher record; auth identity is auto-linked (see Section 18).
+For emails that aren't registered & attempt to login, then a page showing "Unauthorized, please request registration" will be shown to the user.
+General rule: 
+Vinci Email holders get Admin role and full system access. In V1, all Vinci email holders are trusted as operational staff. In V2+, an authorization flag may control feature-level access.
+Non-Vinci email (Teacher role): may view/edit their own teacher profile, availability schedule, and personal lesson calendar (assigned classes only). No access to chatbot, finance data, other teachers' data, or admin features.
+A person with a vinci email can view everything, however sharing of the system will be restricted to those authorized to deal with operations.
+Vinci domain: @vinciai.academy, for admin only access.
+4. Data Ownership
+Principle: Database is the system of record. WATI & Google drive are integrations but not main sources of data. WATI would be the intermediary party which connects whatsapp messages and replies to the backend and then to the database, will record acceptances in a field in the LessonsTeachers table. Google Drive will act as a hub for course material and sharing them (through links) to the teachers.
+5. Lesson Assignment Lifecycle
+Lesson States
+Lesson state transitions
+The canonical status set is the one enforced in the database (section 8): Unassigned, OfferSent, HasAcceptance, Assigned, Completed, Cancelled, Rescheduled. The "TeacherCancelled / Rescheduled" label above maps to the Cancelled and Rescheduled statuses. Recommended addition: an Expired status for lessons whose date passes while never assigned, so only genuinely-taught lessons become Completed (see Outstanding Additions D4 and E3). Note on scoring (E5): for an Active teacher the effective score is floored so max_classes never drops below 1, so a decayed teacher can always be offered at least one lesson to recover.
+Automated Reblast Description
+Job: daily-unassigned-lesson-reblast
+Runs: Everyday, 14:00 Asia/Hong_Kong
+Lessons Targeted Conditions:
+Lessons still labeled OfferSent or Unassigned but not HasAcceptance > Reblast to all filtered tutors.
+Lessons that are on status HasAcceptance however the amount of tutors that accept is still less than the minimum required for that lesson > Reblast to tutors that haven't replied to previous blast.
+Stop condition:
+Once lesson has at least the same amount of tutors that accept as with the minimum number set by admin (will check every 24h from the time the message is sent for this and will stop accepting acceptances from tutors after the condition is met in the most recent 24h check)
+New vs Urgent Status condition:
+If lesson date is within a week of the checking date: Urgent
+    a. For Urgent, a note for the admin that they can manually assign as well if it is that urgent.
+If lessons date is still more than a week from the checking date: New
+Automated Lesson Completed Updater Description
+Job: daily-lesson-completed-updater
+Runs: Everyday, 09:00 Asia/Hong_Kong
+Lessons Targeted:
+for lessons with lesson_date < today (HKT):
+    a. status = Assigned -> Completed (counts for payout + score)
+    b. status in (Unassigned, OfferSent, HasAcceptance) -> Expired (Cancelled / Rescheduled handled by their own flows)
+5A. Rescheduling Flow Detail
+Section 5 of the canonical document describes the lesson lifecycle at a high level but the rescheduling path is less detailed than the cancellation path. This section fills that gap. It defines who can initiate a reschedule, what happens to existing records, and how the system transitions states.
+5A.1 Reschedule initiators
+Note: Teachers do not reschedule lessons directly. A teacher reply of "reschedule" creates an admin notification and surfaces the lesson in the Urgent News dashboard. The admin then decides whether to reschedule or to cancel and reblast.
+5A.2 Reschedule constraints
+The new lesson date must be in the future (> current date in HKT) and must follow the same scheduling rules as a new lesson (Section 6: no same-day scheduling).
+The new start and end times must satisfy end_time > start_time.
+The course assignment does not change on reschedule; only the date and/or time changes.
+A lesson may be rescheduled a maximum of 3 times. After the third reschedule, the admin must cancel and create a new lesson. The reschedule count is tracked in a lessons.reschedule_count column (SMALLINT, default 0, CHECK <= 3). This field should be added to the Lesson table in Section 8.
+Admin may not reschedule a lesson that is in Completed, Cancelled, or Expired status.
+5A.3 State transitions on reschedule
+The reschedule flow differs depending on whether the lesson currently has an assigned teacher.
+Case 1 - Lesson is Assigned (teacher already confirmed)
+Admin sets new date and/or time. System validates the new slot (Section 5A.2).
+System checks whether the currently assigned teacher is available at the new time (using their teacher_availability weekly slots).
+If the teacher IS available at the new time:
+    - lesson.lesson_date, start_time, end_time updated.
+    - lesson.status remains Assigned.
+    - A WATI confirmation message is sent to the teacher with updated date/time.
+    - lesson_events row written: event_type = Reschedule, detail = { old_date, old_start, old_end, new_date, new_start, new_end }.
+If the teacher is NOT available at the new time:
+    - lesson.lesson_date, start_time, end_time updated.
+    - lesson.status -> Rescheduled (interim) -> OfferSent (after reblast).
+    - lesson_teachers row for the previously assigned teacher: offer_status -> Cancelled. The teacher is excluded from the new blast pool.
+    - A WATI message is sent to the teacher informing them that the lesson has been rescheduled and they are no longer assigned.
+    - lesson.reschedule_count incremented by 1.
+    - Reblast triggered immediately to the recomputed eligible teacher pool (excluding the removed teacher). Pool is rebuilt with the new lesson time - teachers who were previously unavailable may now be eligible.
+    - lesson_events row written: event_type = Reschedule.
+Case 2 - Lesson is OfferSent or HasAcceptance (no assigned teacher yet)
+Admin sets new date and/or time. System validates.
+All existing lesson_teachers rows for this lesson are set to offer_status = Cancelled.
+lesson.lesson_date, start_time, end_time updated.
+lesson.status -> OfferSent.
+Reblast triggered immediately to the full recomputed teacher pool for the new time slot.
+lesson.reschedule_count incremented by 1.
+lesson_events row written: event_type = Reschedule.
+Case 3 - Teacher-initiated reschedule request (Assigned lesson)
+Teacher sends "reschedule" reply via WhatsApp.
+System sends admin a WATI notification (using Admin alert template from Section 19): teacher name, lesson ID, date/time, "has requested a reschedule".
+Lesson is flagged in the Urgent News dashboard (same as cancellation).
+lesson.status does not change at this point - the lesson remains Assigned pending admin action.
+Admin reviews and chooses one of:
+    - Confirm reschedule - admin sets new date/time and executes Case 1 or Case 2 above.
+    - Reject reschedule request - admin takes no action; lesson remains Assigned; admin may contact teacher directly.
+    - Treat as cancellation - admin uses the cancellation flow instead (Section 5 cancellation path).
+5A.4 Database changes for reschedule
+5A.5 WhatsApp messages for rescheduling
+The following message contexts are needed for the rescheduling flow. Templates should be added to Section 19 of the canonical document.
+To teacher - new time confirmed (teacher is still assigned): 
+Dear {{name}}, your lesson for {{course_name}} has been rescheduled. New date: {{new_date}}, from {{new_start_time}} to {{new_end_time}}. Your assignment is unchanged. Please update your calendar. Thank you.
+To teacher - removed due to unavailability: 
+Dear {{name}}, the lesson for {{course_name}} originally scheduled for {{old_date}} has been rescheduled to {{new_date}} ({{new_start_time}}-–{{new_end_time}}). As this time falls outside your availability, you have been unassigned. We will notify you of future opportunities. Thank you.
+To admin - teacher reschedule request: 
+Teacher {{tutor_name}} assigned to lesson {{lesson_id}} ({{course_name}}, {{date}} {{start_time}}-–{{end_time}}) has requested a reschedule. Please review in the admin dashboard and confirm or reject.
+6. Conflict Prevention & Scheduling Rules
+Lessons scheduled cannot be on the day or before the current day.
+Lessons will have a set teacher amount that the admin will initially set during lesson scheduling and that number will be the maximum number of teachers that can be assigned to that lesson.
+Availability will be inputted by the teacher when they first input their data. It is captured as recurring weekly time slots (a repeating weekly schedule) and is the primary filter used to build the offer pool - see section 13.
+Teachers who have reached the max amount of assigned lessons based on their score cap will not be selected in the pool.
+For the reblast for teacher cancellations or lesson rescheduling, the initial teacher chosen and unavailable will not be re-sent the teaching offer.
+"Urgent" status will be assigned automatically to any lesson within a week that hasn't had a tutor assigned.
+Reblasts will be done daily until the number of tutors that accept is at least equal to the amount of tutors needed for that lesson.
+6A. API Route Catalogue
+All backend API routes are listed below by resource. Every route performs a server-side role check before executing. Unauthenticated requests receive 401; requests from the wrong role receive 403. All routes return JSON.
+6A.1 Lessons
+6A.2 Teachers
+6A.3 Availability
+6A.4 WhatsApp Webhook (inbound)
+6A.5 Finance snapshots
+6A.6 System / cron jobs (internal)
+The following jobs are called internally by the scheduler (Supabase pg_cron or equivalent). They are not exposed as public routes. Each job validates an internal secret header before executing.
+Note: All mutating API operations write an event row to lesson_events (event_type: see Section 8 enum) after the main transaction commits. Event writes are best-effort and must not block the primary response.
+6B. WATI Webhook Security & Validation
+This section defines how the system authenticates and validates inbound WhatsApp message events delivered by WATI to the /api/webhooks/wati endpoint. All inbound webhook requests must pass these checks before any business logic is executed.
+6B.1 Authentication
+WATI signs every outbound webhook with an HMAC-SHA256 signature computed over the raw request body using a shared secret. The system must verify this signature on every inbound request.
+Verification steps
+Read the raw (unparsed) request body as bytes before any JSON parsing.
+Read the WATI-Signature header from the request (format: sha256=<hex_digest>).
+Compute HMAC-SHA256 of the raw body using the WATI_WEBHOOK_SECRET environment variable as the key.
+Compare the computed digest to the value in the header using a timing-safe comparison function (e.g. crypto.timingSafeEqual). Do not use string equality - it is vulnerable to timing attacks.
+If the signatures do not match: return HTTP 401 and log the discrepancy (do not log the raw body - it may contain phone numbers). Do not process the payload.
+If the header is absent: return HTTP 401. Treat it the same as a signature mismatch.
+6B.2 Replay attack prevention
+A valid signature alone does not prevent an attacker from replaying a captured request. The following additional controls are required:
+Timestamp check: WATI includes a timestamp in the webhook payload (field: timestamp or event_time, check WATI documentation for exact field name). If the event timestamp is more than 5 minutes in the past (evaluated in HKT), reject the request with HTTP 400 and log it as a replay attempt.
+Idempotency key: WATI includes a unique message ID per event (field: id). On receipt, check a short-lived cache (e.g. Redis or Supabase table with TTL) for the message ID. If it has already been processed, return HTTP 200 immediately (do not reprocess). Store the message ID with a 10-minute TTL after first processing.
+6B.3 Payload parsing and intent detection
+Once the signature is verified and replay checks pass, the webhook payload is parsed to extract the teacher's reply. Parsing must be defensive - malformed or unexpected payloads must not crash the webhook handler.
+Reply intent mapping
+Fallback rules
+If the teacher's phone number cannot be matched to any teacher record: log the event and notify admin. Do not silently discard.
+If the lesson associated with the reply is already Completed, Cancelled, or Expired: return HTTP 200, log the late reply to lesson_events, and take no further action.
+If the teacher has already Accepted this lesson (duplicate accept): return HTTP 200 and log; do not create a second accepted row.
+6B.4 Response behaviour
+The webhook handler must always return HTTP 200 to WATI within 3 seconds, even if processing is deferred asynchronously. A non-200 response causes WATI to retry delivery (up to 3 times per WATI's policy), which could trigger duplicate processing. Actual business logic (score updates, reblasts, admin notifications) runs in a background queue after the 200 is returned.
+7. Tutor Scoring Rules
+2 Elements:
+Skill score: 10% weight (max value is 10)
+Experience score: 90% weight (max value is 90)
+Skill score + Experience score = Total score (max 100). Practical minimum for new teachers: 45 (base experience) + 0 (skill) = 45. Decayed teachers may reach 0; max_classes is floored at 1 for Active teachers so they can always recover. Inactive teachers are excluded from offers regardless of score.
+Effects number of classes they can accept in total, formula: floor(Total score/10)
+Base/initial score (when first added): 45 + Skill score
+Score decays by 10 points if a tutor has not completed a lesson within 14 days (checked daily at 09:00 HKT). Uses last_completed_lesson_at; if NULL, decay starts from created_at. Decay stops when the teacher becomes inactive.
+Score increases by 10 points per day when at least one assigned lesson transitions to Completed (checked daily at 09:00 HKT). Multiple completions on same day yield single +10. Capped at a total score of 100.
+Automated Score Updater Description
+Job: daily-update-score
+Runs: Everyday, 09:00 Asia/Hong_Kong
+Add Score Conditions:
+Has taught a class over the past 24h: +10 points
+Decrease Score Conditions:
+Hasn't taught a class in the past 2 weeks (from the day of checking): -10 points
+Has cancelled a class assignment over the past 24h: -5 points
+8. Database Design
+Tables
+School
+Courses
+Teacher
+Teacher Availability
+Lesson
+Lesson_Teachers
+Lesson_events
+app_users
+Teacher_salary_snapshot
+Course_financial_snapshot
+Further details
+Foreign Key Relationships
+Enumerated Values & Key constraints
+Derived (not stored)
+Row-Level Security (RLS) policies
+ID Formatting
+8.1 schools - Partner Schools
+8.2 courses - Course Catalogue
+8.3 teachers - Tutor Pool
+8.4 teacher_availability - Weekly Availability Slots
+8.5 lessons - Scheduled Lessons
+8.6 lesson_teachers - Offer / Acceptance / Assignment Junction
+8.7 lesson_events - Audit Log
+8.8 app_users - Auth Identity & Roles
+8.9 teacher_salary_snapshots - Monthly Salary Reports
+8.10 course_financial_snapshots - Monthly P/L Reports
+8.11 ID Implementation Guidelines
+ID Generation Logic
+For all BIGINT-based tables, the application layer should generate the external ID by: (1) inserting the row to obtain the auto-incremented surrogate key, (2) formatting with the table-specific prefix and zero-padding, and (3) storing or returning the formatted ID. Alternatively, maintain a display_id column if the formatted ID must be queryable at the database level.
+Parsing / Reverse Lookup
+To parse an external ID back to its internal key: split on the first hyphen, validate the prefix against the known prefix table, strip the prefix, convert the numeric component to BIGINT, and query the corresponding table. The prefix makes the table origin unambiguous.
+Collision Avoidance
+All prefixes are unique across the schema (SCH, CRS, TCH, AVL, LSN, EVT, USR, TSS, CFS). Prefixes were chosen to avoid visually similar pairs (e.g., no two prefixes share the same first letter where possible). The numeric component uses the database's atomic auto-increment, guaranteeing gap-free, unique sequences per table.
+9. Data Input Rules
+School (admin only)
+Courses (admin only)
+Teachers (Teacher can directly do it / admin)
+Lessons (admin only)
+Teachers must not modify:
+Their own score (a system will calculate automatically)
+Rates (based on agreement with Vinci beforehand)
+Salary (based on rate)
+Other teacher's data
+10. Financial Calculation & Report Rules
+Tutor Salary Calculation
+Calculated per month:
+Tutor Salary Total = Tutor Hours Taught x Tutor Rate
+TA Salary Total = TA Hours Taught x TA Rate
+Total Salary = Tutor Salary Total + TA Salary Total
+To calculate overall total:
+Tutor Salary Total = SumFromAllMonths(Tutor Salary Total)
+TA Salary Total = SumFromAllMonths(TA Salary Total)
+Course Profit/Loss Calculation
+Calculated per month:
+Sum of each courses income (payment from schools)
+Sum of the total expenses from lessons that has connections to each course (tutor salary + other expenses such as transportation etc)
+Profit/Loss margin per course course = Sum of Income per course - Sum of Expenses per course
+% version: Profit/Loss margin per course = (Income per course - Expenses per course) / Income per course * 100.
+Income & hours sources (clarifications)
+Lesson income default (G1): when a lesson's Income is left blank, it defaults to the course's revenue_per_lesson; the monthly course snapshot uses the resolved value.
+Salary hours source (G2/G3): a teacher's monthly tutor_hours / ta_hours are the summed durations (end_time - start_time) of that teacher's Completed lessons in the month, split by their lesson_teachers.role. Payout = role rate x hours, fixed when the lesson becomes Completed; a later rate change does not rewrite an already-Completed lesson's payout.
+Automated Task Description
+Job: monthly-finance-snapshot
+Runs: 1st of each month, 09:00 Asia/Hong_Kong
+Period: previous calendar month (HKT)
+For each teacher: sum lesson hours from Completed lessons in period, split by lesson_teachers.role -> tutor_hours, ta_hours; payout = hours x rate captured now; UPSERT on (teacher_id, year, month).
+For each course: sum lesson_income (income) and extra_expenses + teacher payouts (expenses); UPSERT on (course_id, year, month).
+Idempotent: re-running the same period overwrites, never duplicates.
+10A. Late Cancellation Payout Rules
+Section 10 defines how teacher salaries are calculated from Completed lesson hours. It does not address what happens to payout when a teacher cancels after being assigned. This section fills that gap and should be inserted after Section 10 in the canonical document.
+10A.1 Definitions
+10A.2 Payout rules by cancellation type
+10A.3 Partial lesson delivery (future consideration)
+V1 does not support partial-hour payout (e.g. a teacher who teaches 30 minutes of a 60-minute lesson before a cancellation). In V1:
+Payout is binary: either the full lesson payout (if Completed) or zero (if Cancelled/No-show).
+If a lesson is partially delivered, the admin must decide whether to mark the lesson Completed (full pay) or Cancelled (no pay). No fractional payout is computed.
+A partial_hours field and fractional payout calculation are deferred to V2.
+10A.4 Financial snapshot implications
+The monthly-finance-snapshot job (Section 10, Automated Task Description) already excludes Cancelled lessons from payout calculations. This section confirms and extends that rule:
+Only lessons with status = Completed are included in the salary snapshot. Cancelled, Rescheduled, and Expired lessons contribute zero to tutor_hours and ta_hours.
+The lesson_teachers.payout field is set at the time the lesson transitions to Completed (rate x hours, using rates current at that moment). For Cancelled lessons, payout is explicitly set to 0 (not NULL) so that future queries can distinguish "not yet calculated" (NULL) from "calculated as zero" (0).
+A late cancellation does not generate any negative payout entry. The -5 score penalty is the only financial consequence beyond the missed earning opportunity.
+10A.5 Edge case: admin-initiated cancellation
+If the admin cancels a lesson (e.g. school cancelled the class) rather than the teacher, the following rules apply:
+The assigned teacher receives zero payout (same as teacher-initiated cancellation) in V1.
+No score penalty is applied to the teacher. The -5 score penalty is only applied when the teacher initiates the cancellation.
+The lesson_events row records event_type = Cancel with detail.initiator = "admin".
+The daily-update-score job checks detail.initiator when applying the cancellation penalty to ensure it only penalises teacher-initiated cancellations.
+Note: Goodwill compensation (e.g. a partial kill fee for admin-cancelled lessons on short notice) is a business policy decision outside the scope of this document. If implemented in future, it would be recorded as a manual payout adjustment, not through the automated salary calculation.
+11. Pages & Features Breakdown
+12. Failure Handling Rules
+Whatsapp message failures
+If a message sending fails (does not return code 200), will resend the same message, if it fails 3 times, notify the admin so can check if there are any API key problems.
+If WATI reports a number is not on WhatsApp (or repeatedly undeliverable), flag the teacher and surface it to the admin so the number can be corrected; do not silently keep blasting a dead number.
+Chatbot AI model failures
+For basic data request fetches have hardcoded responses based on database data ready.
+For more complex tasks, have an error message (if multiple failures the admin should notify the developer to look into the problem).
+Data input failures
+A pop up message should appear to the admin, telling them that the data input failed, and they should try to refresh or re-open the app before re-inputting the data.
+If after that it doesn't work, the admin should notify the developer to look into the problem.
+API route authorization model
+Any data changing operation that runs through the backend with server side role check that returns 401 (not signed in) or 403 (wrong role) on failure. Admin only operations stated in section 8 under "Security, Access Control & Data Isolation".
+13. Tutor Availability & Schedule Rules
+Schedule format
+Availability is captured as recurring weekly time slots (a repeating weekly schedule), not specific calendar dates.
+For each weekday the teacher adds one or more time blocks, each with a start and end time in HKT (e.g. Monday 09:00-12:00 and 14:00-18:00).
+Each block is stored as one row in the Teacher Availability table (teacher_id, day_of_week, start_time, end_time); a weekday with no blocks means the teacher is unavailable that day.
+day_of_week uses 0 = Sunday through 6 = Saturday, and times are wall-clock Hong Kong time, consistent with the lesson start & end times.
+Where & when it is entered
+Entered by the teacher on the teacher input & availability page when they first submit their data, and editable by the teacher (or an admin) at any time afterwards.
+The teacher may optionally add a free-text note for context, but only the structured weekly slots are used to build the offer pool.
+Validation
+Each block's end time must be after its start time; zero-length or reversed blocks are rejected.
+Overlapping or directly adjacent blocks on the same day are merged into a single block before saving (e.g. 09:00-12:00 and 11:00-13:00 become 09:00-13:00).
+Exact duplicate blocks are not allowed (enforced by the UNIQUE constraint on teacher_id, day_of_week, start_time, end_time).
+Editing & updates
+When a teacher resubmits their availability, their existing slots are fully replaced with the new set, so removed blocks disappear and the schedule always reflects the latest submission.
+Editing availability does not change lessons the teacher is already assigned to; it only affects which future offers they are eligible for.
+Matching availability to lessons (offer pool)
+A teacher is available for a lesson when, on the lesson's weekday, one of their availability blocks fully covers the lesson's time (block start at or before the lesson start, and block end at or after the lesson end).
+This availability check is combined with the score cap (section 7) and a check that the teacher is not already assigned to an overlapping lesson, before the WhatsApp blast is sent (sections 6 & 11).
+Teachers with no matching availability for a lesson are not included in that lesson's blast.
+14. Implementation Status
+15. Related Documents & Maintenance Rules
+Related Documents
+Maintenance Rules
+When a rule changes or is updated, update this document first, then realign the spreadsheet and UI.
+16. Secret Management Rule
+One rule: no service-role, WATI, Ollama, or Drive secrets in the browser bundle; all integration calls run on the server using environment variables. The browser only ever holds the public anon key.
+17. PII Handling for Whatsapp Numbers & Emails
+The following rules govern the handling of Personally Identifiable Information (PII), specifically WhatsApp numbers and email addresses, throughout the system.
+PII Access Control: Only Admin users may view teacher WhatsApp numbers and email addresses. Teachers cannot view other teachers' contact details. The Excel export function (admin-only) may include PII columns; exported files containing PII must be stored securely and never shared outside Vinci operations staff.
+Chatbot PII Constraints (Section 21): The LLM chatbot (V2+) is strictly read-only and queries only anonymized or parameterized database views. The chatbot must never receive raw WhatsApp numbers, email addresses, or other teacher contact details. If the LLM is ever changed from a local Ollama instance to a cloud-hosted model, all teacher PII must be redacted from chatbot queries before data leaves the local infrastructure.
+Data Retention and Deletion: When a teacher leaves, their record is deactivated (status changed to 'Inactive') rather than hard-deleted, to preserve historical lesson and financial data integrity. The teacher's WhatsApp number and email are retained in the database but excluded from all offer pools, blasts, and exports. A hard delete (full erasure of PII) may be performed only upon explicit written request from the former teacher, in compliance with data protection regulations; hard deletion requires admin action and is irreversible.
+WATI Integration PII: WhatsApp numbers are transmitted to WATI solely for the purpose of delivering lesson offers and confirmations. WATI API responses indicating a number is not registered on WhatsApp must trigger an admin notification so the number can be corrected; the system must not silently retry undeliverable numbers.
+Third-Party Disclosure: Teacher PII must not be shared with any third party except WATI (for WhatsApp message delivery) and Google (for Drive file access via email-based sharing). No PII may be used for marketing, analytics, or any purpose outside the operational functions described in this document.
+18. First-Sign-In Identity-Linking Flow
+On first sign-in:
+Read the verified email from the auth provider.
+is_vinci_email = (domain in Vinci domain list) -> see C6
+If Vinci email -> app_users.role = 'Admin'
+    a. Else match teachers.email = sign-in email:
+        i. match found -> role='Teacher', link teacher_id + auth_user_id
+        ii. no match -> show 'Unauthorized, request registration'
+19. Whatsapp Message Templates
+For Tutor
+New/Urgent Unassigned Lesson Offer
+Hello,
+{{urgency}} teaching opportunity
+Lesson Details:
+- Course: {{course_name}}
+- Lesson ID: {{lesson_id}}
+- Date: {{date}}
+- Start time: {{start_time}}
+- End time: {{end_time}}
+- School/location: {{school}}
+Please reply with the Accept button to Accept offer,
+Thank you
+Assignment Confirmation
+Dear {{name}}, you have been assigned a lesson for {{course_name}}, at {{date}}, from {{start_time}} to {{end_time}}, please prepare by thoroughly reading through the provided slides in the given links below:
+SLIDE LINK: {{link}}
+Should you need to cancel or want to request to reschedule, please reply to this message with either "cancel" or "reschedule" and we will get back to you as soon as possible, Thank you.
+For Admin
+Tutor cancellation/rescheduling request reminder
+Teacher {{tutor_name}} assigned to lesson {{lesson_id}} for class {{course_name}} at {{date}} from {{start_time}} to {{end_time}} has {{cancel_or_reschedule}} their booking. The system has re-sent the notification to other tutors again. If you want to pick a specific tutor, please open the admin dashboard and assign them manually, thank you.
+Rescheduling Templates (from Section 5A)
+To teacher - new time confirmed (teacher is still assigned)
+Dear {{name}}, your lesson for {{course_name}} has been rescheduled. New date: {{new_date}}, from {{new_start_time}} to {{new_end_time}}. Your assignment is unchanged. Please update your calendar. Thank you.
+To teacher - removed due to unavailability
+Dear {{name}}, the lesson for {{course_name}} originally scheduled for {{old_date}} has been rescheduled to {{new_date}} ({{new_start_time}}-–{{new_end_time}}). As this time falls outside your availability, you have been unassigned. We will notify you of future opportunities. Thank you.
+To admin - teacher reschedule request
+Teacher {{tutor_name}} assigned to lesson {{lesson_id}} ({{course_name}}, {{date}} {{start_time}}-–{{end_time}}) has requested a reschedule. Please review in the admin dashboard and confirm or reject.
+20. Google Drive Folder Structure
+Course Materials
+├── Course1_ID/
+│   ├── Lesson_1_material.pdf
+│   └── Lesson_2_material.pdf
+├── Course2_ID/
+│   ├── Lesson_1_material.pdf
+│   └── Lesson_2_material.pdf
+...
+21. LLM Data Access Constraints
+Chatbot is read-only access through a fixed set of parameterized queries/database views, not arbitrary generated SQL. Chatbot may see all data for school, courses, and lessons. For teachers, it may only read through the teacher ID and name and cannot return the teacher phone number or any other contacts as it is only used for the whatsapp integration through WATI & file sharing, the admin may only view a teacher's phone numbers when they are assigned to a lesson to contact them directly to inform the teacher of any changes or urgent information which require a manual override.
+22. ID Formatting
+All entity IDs in the system follow a consistent format: a 3-letter uppercase prefix, a hyphen separator, and a 6-digit zero-padded sequence number. The numeric component is auto-incremented per table. IDs are generated by the application layer after INSERT (surrogate key obtained), then formatted for display. The prefix makes the table origin unambiguous and prevents collision across tables.
+Composite Keys: The lesson_teachers junction table uses a composite primary key (lesson_id, teacher_id) with no single ID column. External references always use the LSN-XXXXXX + TCH-XXXXXX pair format.
+Reverse Lookup: To parse an external ID back to its internal key: split on the first hyphen, validate the prefix against the known prefix table above, strip the prefix, convert the numeric component to BIGINT, and query the corresponding table.
+UUID Format (app_users): The app_users table uses UUID inherited from Supabase auth. The USR- prefix is prepended at the application layer for display consistency only.
+Appendix A - Open Decisions
+These choices are not yet resolved in the body of the document and need a decision. The recommended option is given for each.
+Appendix B - Outstanding Additions
+The following items were previously identified as needing work and have now been incorporated into this document:
+Note: All previously outstanding items are now resolved and incorporated. Future additions should be logged here with a [To do] status until formally adopted. When adopted, status changes to [Applied] with section reference.
+
+
+Vinci Automation
+Business Rules v1.2
+Document control: this is the canonical rules document.
+Last updated: June 2026

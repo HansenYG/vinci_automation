@@ -30,11 +30,13 @@ def list_dashboard(
     date_to: str | None = Query(default=None, description="ISO date upper bound"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
+    show_all: bool = Query(default=False, description="If true, show all lessons (not just action-needed)"),
     db: Client = Depends(get_supabase),
 ):
     """
-    Lesson Dashboard feed — all lessons sorted by urgency (closest date first).
-    Supports filtering by status, course, teacher, and date range.
+    Lesson Dashboard feed.
+    Default: action-needed lessons only (unassigned/offersent/hasacceptance), urgency-sorted.
+    Pass show_all=true to see all lessons sorted by date.
     Returns paginated results with total count.
     """
     return repos.list_dashboard(
@@ -46,6 +48,7 @@ def list_dashboard(
         date_to=date_to,
         page=page,
         page_size=page_size,
+        show_all=show_all,
     )
 
 

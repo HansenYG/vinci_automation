@@ -78,7 +78,7 @@ class LessonCreate(BaseModel):
     teacher_id: str | None = None
     start_time: str | None = None
     end_time: str | None = None
-    status: str | None = "Scheduled"
+    status: str | None = "Unassigned"
     role: str | None = None
     tutor_assignment: str | None = None
     lesson_material_link: str | None = None
@@ -107,6 +107,7 @@ class LessonUpdate(BaseModel):
 class AssignRequest(BaseModel):
     teacher_id: str
     send_files: bool = True
+    force_reassign: bool = False  # if True, allow re-assigning a different tutor to an already-assigned lesson
 
 
 class AnnounceLessonRequest(BaseModel):

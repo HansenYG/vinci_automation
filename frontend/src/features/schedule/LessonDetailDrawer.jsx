@@ -5,6 +5,13 @@
  * After any mutation it calls:
  *   1. onChanged()  — so the parent view refreshes its own data
  *   2. invalidate() — so the OTHER view (via LessonsContext) also refreshes
+ *
+ * PRD-compliant assign flow:
+ *   - Accepted tutors sorted highest score → lowest (PRD §2 step 4)
+ *   - CLASH (different tutor already assigned) → warning modal with confirm
+ *   - DUPLICATE (same tutor already assigned) → inline error message
+ *   - FULL (max tutors reached) → disabled buttons
+ *   - On successful assign: lesson disappears from dashboard if fully assigned
  */
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -24,10 +31,55 @@ const STATUS_META = {
   completed:     { label: 'Completed',      color: 'blue' },
   cancelled:     { label: 'Cancelled',      color: 'grey' },
   rescheduled:   { label: 'Rescheduled',    color: 'yellow' },
+  expired:       { label: 'Expired',        color: 'grey' },
 }
 function getStatusMeta(status) {
   const key = (status || '').toLowerCase()
   return STATUS_META[key] || { label: status || '—', color: 'grey' }
+}
+
+function scoreBar(score) {
+  const pct = Math.min(100, Math.max(0, score || 0))
+  const color = pct >= 70 ? '#22c55e' : pct >= 45 ? '#f59e0b' : '#ef4444'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+      <div style={{ flex: 1, height: 4, background: '#e5e7eb', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.3s' }} />
+      </div>
+      <span style={{ fontSize: 11, color, fontWeight: 600, minWidth: 28 }}>{pct.toFixed(0)}</span>
+    </div>
+  )
+}
+
+// ── Clash Confirm Modal ───────────────────────────────────────────────────────
+function ClashModal({ existingName, newName, onConfirm, onCancel }) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1100,
+      background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: 12, padding: '28px 32px', maxWidth: 420, width: '90%',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+      }}>
+        <div style={{ fontSize: 22, marginBottom: 8 }}>⚠️ Re-assign tutor?</div>
+        <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.6, margin: '0 0 20px' }}>
+          This lesson already has <strong>{existingName}</strong> assigned.
+          Assigning <strong>{newName}</strong> will replace them as the primary tutor.
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn btn--sm" onClick={onCancel}>Cancel</button>
+          <button
+            className="btn btn--sm"
+            style={{ background: '#f59e0b', color: '#fff', border: '1px solid #f59e0b' }}
+            onClick={onConfirm}
+          >
+            Yes, re-assign
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -42,6 +94,9 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
   const [confirmCancel, setConfirmCancel] = useState(false)
   const cancelTimerRef = useRef(null)
 
+  // Clash modal state
+  const [clashPending, setClashPending] = useState(null) // { teacherId, teacherName, existingName }
+
   const { invalidate } = useLessonsContext()
   const navigate = useNavigate()
 
@@ -52,6 +107,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
     setMaterial(lesson.lesson_material_link || '')
     setIncome(lesson.lesson_income ?? '')
     setMsg('')
+    setClashPending(null)
     getOffers(lessonId).then(setOffers).catch(() => setOffers([]))
     getAcceptedPool(lessonId).then(setAccepted).catch(() => setAccepted([]))
   }, [lessonId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -67,13 +123,12 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
   const flash = (t, type = 'info') => {
     setMsg(t); setMsgType(type)
     window.clearTimeout(flash._t)
-    flash._t = window.setTimeout(() => setMsg(''), 3000)
+    flash._t = window.setTimeout(() => setMsg(''), 4000)
   }
 
   const refresh = () => {
     getOffers(lessonId).then(setOffers).catch(() => {})
     getAcceptedPool(lessonId).then(setAccepted).catch(() => {})
-    // Notify both the parent view AND the other view via context
     onChanged?.()
     invalidate()
   }
@@ -85,11 +140,46 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
     finally   { setBusy(false) }
   }
 
-  const handleAssign = (teacherId) => {
-    if (lesson.assigned_teacher_id && lesson.assigned_teacher_id !== teacherId) {
-      if (!window.confirm('This lesson already has an assigned tutor. Re-assign to this tutor?')) return
+  // ── Assign with clash/duplicate/full handling ──────────────────────────────
+  const doAssign = async (teacherId, forceReassign = false) => {
+    setBusy(true)
+    setMsg('')
+    try {
+      const resp = await assignTutor(lessonId, teacherId, true, forceReassign)
+      // Success
+      flash('Tutor assigned and confirmation sent.', 'info')
+      refresh()
+    } catch (err) {
+      const status = err?.response?.status
+      const body   = err?.response?.data || {}
+
+      if (status === 409) {
+        if (body.error_code === 'DUPLICATE') {
+          flash(`Error: ${body.detail || 'This tutor is already assigned.'}`, 'error')
+        } else if (body.error_code === 'CLASH') {
+          // Show the clash modal — user must confirm
+          const existingName = lesson.assigned_teacher_name || 'existing tutor'
+          const newTeacher   = accepted.find((t) => t.teacher_id === teacherId)
+          const newName      = newTeacher?.teacher_name || teacherId
+          setClashPending({ teacherId, teacherName: newName, existingName })
+        } else if (body.error_code === 'FULL') {
+          flash(`Error: ${body.detail || 'Lesson is full.'}`, 'error')
+        } else {
+          flash(body.detail || 'Assignment failed.', 'error')
+        }
+      } else {
+        flash(err?.response?.data?.detail || 'Assignment failed — check the backend.', 'error')
+      }
+    } finally {
+      setBusy(false)
     }
-    run(() => assignTutor(lessonId, teacherId, true), () => 'Tutor assigned and confirmation sent.')
+  }
+
+  const handleClashConfirm = () => {
+    if (!clashPending) return
+    const { teacherId } = clashPending
+    setClashPending(null)
+    doAssign(teacherId, true)
   }
 
   // Cross-view navigation link
@@ -151,7 +241,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             <div className="link-input">
               <input value={material} placeholder="https://…" onChange={(e) => setMaterial(e.target.value)} />
               <button className="btn btn--sm" disabled={busy}
-                onClick={() => run(() => updateLesson(lessonId, { lesson_material_link: material }), () => 'Saved.')}>
+                onClick={() => run(() => updateLesson(lessonId, { lesson_material_link: material }).then(r => r.data), () => 'Saved.')}>
                 Save
               </button>
             </div>
@@ -168,7 +258,10 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             <div className="link-input">
               <input type="number" min="0" step="0.01" value={income} placeholder="0.00" onChange={(e) => setIncome(e.target.value)} />
               <button className="btn btn--sm" disabled={busy}
-                onClick={() => run(() => updateLesson(lessonId, { lesson_income: income === '' ? null : Number(income) }), () => 'Saved.')}>
+                onClick={() => run(
+                  () => updateLesson(lessonId, { lesson_income: income === '' ? null : Number(income) }).then(r => r.data),
+                  () => 'Saved.'
+                )}>
                 Save
               </button>
             </div>
@@ -179,12 +272,12 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             <span className="drawer__section-title">Actions</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
               <button className="btn btn--primary btn--sm" disabled={busy}
-                onClick={() => run(() => blastLesson(lessonId), (r) => `Blasted pool — ${r.sent ?? '?'} sent, ${r.failed ?? '?'} failed.`)}>
+                onClick={() => run(() => blastLesson(lessonId).then(r => r.data ?? r), (r) => `Blasted pool — ${r.sent ?? '?'} sent, ${r.failed ?? '?'} failed.`)}>
                 <SendIcon width={15} height={15} /> Send WhatsApp blast
               </button>
               {lesson.assigned_teacher_id && (
                 <button className="btn btn--sm" disabled={busy}
-                  onClick={() => run(() => resendConfirmation(lessonId), (r) => r.confirmation?.ok ? 'Confirmation re-sent.' : 'Send failed.')}>
+                  onClick={() => run(() => resendConfirmation(lessonId).then(r => r.data ?? r), (r) => r.confirmation?.ok ? 'Confirmation re-sent.' : 'Send failed.')}>
                   Resend confirmation + files
                 </button>
               )}
@@ -201,7 +294,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
                         clearTimeout(cancelTimerRef.current)
                         setConfirmCancel(false)
                         run(
-                          () => updateLesson(lessonId, { status: 'cancelled' }),
+                          () => updateLesson(lessonId, { status: 'cancelled' }).then(r => r.data),
                           () => { setTimeout(() => onClose?.(), 800); return 'Lesson cancelled.' }
                         )
                       }}
@@ -229,27 +322,46 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             </div>
           </div>
 
-          {/* Accepted tutors — assign from pool */}
+          {/* Accepted tutors — assign from pool, sorted by score descending */}
           <div className="field">
             <span className="drawer__section-title">
               Accepted tutors ({accepted.length}) · {assignedCount}/{maxTutors} assigned
             </span>
             {full && <span className="muted" style={{ fontSize: 13, marginTop: 6 }}>Lesson is full — max {maxTutors} tutor(s) assigned.</span>}
-            {!full && accepted.length === 0 && <span className="muted" style={{ fontSize: 13, marginTop: 6 }}>No acceptances yet.</span>}
-            {accepted.filter(Boolean).map((t) => (
-              <div className="pool-row" key={t.teacher_id}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span>{t.teacher_name} <span className="muted">· {t.whatsapp_number}</span></span>
-                  {t.reliability_score != null && (
-                    <span className="muted" style={{ fontSize: 12 }}>Score: {t.reliability_score.toFixed(0)}</span>
-                  )}
+            {!full && accepted.length === 0 && (
+              <span className="muted" style={{ fontSize: 13, marginTop: 6 }}>No acceptances yet — send a blast first.</span>
+            )}
+            {accepted.filter(Boolean).map((t) => {
+              const score = t.reliability_score ?? t.hours_score ?? null
+              const isAlreadyAssigned = offers.some(
+                (o) => o.teacher_id === t.teacher_id && o.offer_status === 'assigned'
+              )
+              return (
+                <div className="pool-row" key={t.teacher_id}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 500 }}>{t.teacher_name}</span>
+                      {isAlreadyAssigned && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, background: '#dcfce7', color: '#16a34a',
+                          padding: '1px 6px', borderRadius: 10, letterSpacing: 0.3,
+                        }}>ASSIGNED</span>
+                      )}
+                    </div>
+                    <span className="muted" style={{ fontSize: 12 }}>{t.whatsapp_number}</span>
+                    {score != null && scoreBar(score)}
+                  </div>
+                  <button
+                    className={`btn btn--sm${isAlreadyAssigned ? '' : ' btn--primary'}`}
+                    disabled={busy || (full && !isAlreadyAssigned)}
+                    onClick={() => doAssign(t.teacher_id)}
+                    style={isAlreadyAssigned ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                  >
+                    {isAlreadyAssigned ? 'Assigned' : full ? 'Full' : 'Assign'}
+                  </button>
                 </div>
-                <button className="btn btn--primary btn--sm" disabled={busy || full}
-                  onClick={() => handleAssign(t.teacher_id)}>
-                  {full ? 'Full' : 'Assign'}
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {/* Full offer pool */}
@@ -265,6 +377,16 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
           </div>
         </div>
       </aside>
+
+      {/* Clash confirmation modal */}
+      {clashPending && (
+        <ClashModal
+          existingName={clashPending.existingName}
+          newName={clashPending.teacherName}
+          onConfirm={handleClashConfirm}
+          onCancel={() => setClashPending(null)}
+        />
+      )}
 
       {msg && (
         <div className="toast" style={{ background: msgType === 'error' ? '#dc2626' : '#111827' }}>

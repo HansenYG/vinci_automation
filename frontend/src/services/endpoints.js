@@ -19,8 +19,12 @@ export const getDashboardLessons = (params = {}) =>
 // --- Scheduling triggers ---
 export const getAcceptedPool = (id) => data(api.get(`/api/scheduling/lessons/${id}/accepted`))
 export const blastLesson = (id) => data(api.post(`/api/scheduling/lessons/${id}/blast`))
-export const assignTutor = (id, teacherId, sendFiles = true) =>
-  data(api.post(`/api/scheduling/lessons/${id}/assign`, { teacher_id: teacherId, send_files: sendFiles }))
+export const assignTutor = (id, teacherId, sendFiles = true, forceReassign = false) =>
+  api.post(`/api/scheduling/lessons/${id}/assign`, {
+    teacher_id: teacherId,
+    send_files: sendFiles,
+    force_reassign: forceReassign,
+  })
 export const resendConfirmation = (id) => data(api.post(`/api/scheduling/lessons/${id}/send-confirmation`))
 export const announceLesson = (body) => data(api.post('/api/scheduling/announce-lesson', body))
 

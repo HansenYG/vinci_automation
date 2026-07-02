@@ -79,6 +79,9 @@ def list_schedule(
     return q.order("lesson_date").order("start_time").execute().data or []
 
 
+ACTION_NEEDED_STATUSES = ["unassigned", "offersent", "hasacceptance"]
+
+
 def list_dashboard(
     db: Client,
     status: str | None = None,
@@ -88,47 +91,107 @@ def list_dashboard(
     date_to: str | None = None,
     page: int = 1,
     page_size: int = 25,
+    show_all: bool = False,
 ) -> dict:
     """
     Lesson Dashboard feed with pagination.
-    Sorted by urgency: lessons needing attention (unassigned/offersent/hasacceptance)
-    closest to today first, then all others.
+
+    Default behaviour (show_all=False, no status filter):
+      Shows only action-needed lessons (unassigned, offersent, hasacceptance).
+      Sorted per PRD urgency:
+        Bucket 1 — no acceptances yet (unassigned / offersent): closest date first.
+        Bucket 2 — has acceptances but not yet assigned (hasacceptance): closest date first.
+
+    When a status filter is provided or show_all=True:
+      Shows all matching lessons sorted by lesson_date ascending.
+
     Returns {items: [...], total: int, page: int, page_size: int, pages: int}.
     """
+    import math
+
     q = db.table(SCHEDULE_VIEW).select("*", count="exact")
+
     if date_from:
         q = q.gte("lesson_date", date_from)
     if date_to:
         q = q.lte("lesson_date", date_to)
-    if status:
-        statuses = [s.strip().lower() for s in status.split(",") if s.strip()]
-        if len(statuses) == 1:
-            q = q.eq("status", statuses[0])
-        elif statuses:
-            q = q.in_("status", statuses)
     if course_id:
         q = q.eq("course_id", course_id)
     if teacher_id:
         q = q.eq("assigned_teacher_id", teacher_id)
 
-    # Sort: closest lesson_date first (ascending)
-    q = q.order("lesson_date", desc=False).order("start_time", desc=False)
+    if status:
+        # Explicit status filter — show whatever was requested
+        statuses = [s.strip().lower() for s in status.split(",") if s.strip()]
+        if len(statuses) == 1:
+            q = q.eq("status", statuses[0])
+        elif statuses:
+            q = q.in_("status", statuses)
+        q = q.order("lesson_date", desc=False).order("start_time", desc=False)
+        offset = (page - 1) * page_size
+        q = q.range(offset, offset + page_size - 1)
+        res = q.execute()
+        total = res.count or 0
+        pages = math.ceil(total / page_size) if page_size > 0 else 1
+        return {"items": res.data or [], "total": total, "page": page, "page_size": page_size, "pages": pages}
 
-    # Pagination
-    offset = (page - 1) * page_size
-    q = q.range(offset, offset + page_size - 1)
+    if show_all:
+        # Admin explicitly wants all lessons
+        q = q.order("lesson_date", desc=False).order("start_time", desc=False)
+        offset = (page - 1) * page_size
+        q = q.range(offset, offset + page_size - 1)
+        res = q.execute()
+        total = res.count or 0
+        pages = math.ceil(total / page_size) if page_size > 0 else 1
+        return {"items": res.data or [], "total": total, "page": page, "page_size": page_size, "pages": pages}
 
-    res = q.execute()
-    total = res.count or 0
-    import math
+    # Default: action-needed only, two-bucket urgency sort (PRD §3.2)
+    # Bucket 1: no acceptances (unassigned / offersent) — sorted by date asc
+    # Bucket 2: has acceptances but not assigned (hasacceptance) — sorted by date asc
+    q_no_accept = (
+        db.table(SCHEDULE_VIEW)
+        .select("*")
+        .in_("status", ["unassigned", "offersent"])
+    )
+    q_has_accept = (
+        db.table(SCHEDULE_VIEW)
+        .select("*")
+        .eq("status", "hasacceptance")
+    )
+    if date_from:
+        q_no_accept = q_no_accept.gte("lesson_date", date_from)
+        q_has_accept = q_has_accept.gte("lesson_date", date_from)
+    if date_to:
+        q_no_accept = q_no_accept.lte("lesson_date", date_to)
+        q_has_accept = q_has_accept.lte("lesson_date", date_to)
+    if course_id:
+        q_no_accept = q_no_accept.eq("course_id", course_id)
+        q_has_accept = q_has_accept.eq("course_id", course_id)
+    if teacher_id:
+        q_no_accept = q_no_accept.eq("assigned_teacher_id", teacher_id)
+        q_has_accept = q_has_accept.eq("assigned_teacher_id", teacher_id)
+
+    bucket1 = (
+        q_no_accept
+        .order("lesson_date", desc=False)
+        .order("start_time", desc=False)
+        .execute()
+        .data or []
+    )
+    bucket2 = (
+        q_has_accept
+        .order("lesson_date", desc=False)
+        .order("start_time", desc=False)
+        .execute()
+        .data or []
+    )
+
+    all_items = bucket1 + bucket2
+    total = len(all_items)
     pages = math.ceil(total / page_size) if page_size > 0 else 1
-    return {
-        "items": res.data or [],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "pages": pages,
-    }
+    offset = (page - 1) * page_size
+    items = all_items[offset: offset + page_size]
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "pages": pages}
 
 
 def get_lesson_view(db: Client, lesson_id: str) -> dict | None:

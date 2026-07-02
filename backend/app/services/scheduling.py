@@ -152,9 +152,22 @@ def record_acceptance(db: Client, lesson_id: str, teacher_id: str) -> dict:
 
 # --- 4. Choose a tutor from the pool + 5. send the material link -----------
 
-def assign_tutor(db: Client, lesson_id: str, teacher_id: str, *, send_files: bool = True) -> dict:
+def assign_tutor(
+    db: Client,
+    lesson_id: str,
+    teacher_id: str,
+    *,
+    send_files: bool = True,
+    force_reassign: bool = False,
+) -> dict:
     """Assign an (accepted) tutor to a lesson and send the confirmation message
-    carrying the lesson-material link."""
+    carrying the lesson-material link.
+
+    Raises:
+        ValueError: 'DUPLICATE' prefix — same tutor already assigned.
+        ValueError: 'CLASH' prefix — different tutor already assigned and force_reassign=False.
+        ValueError: 'FULL' prefix — lesson is at max tutor capacity.
+    """
     teacher = repos.get_row(db, "teachers", teacher_id)
     if not teacher:
         raise ValueError(f"teacher {teacher_id} not found")
@@ -167,15 +180,37 @@ def assign_tutor(db: Client, lesson_id: str, teacher_id: str, *, send_files: boo
     offers = repos.get_offers(db, lesson_id)
     assigned = [o for o in offers if o["offer_status"] == "assigned"]
     already = any(o["teacher_id"] == teacher_id and o["offer_status"] == "assigned" for o in offers)
+
+    # Duplicate assignment — same tutor already assigned
+    if already:
+        raise ValueError("DUPLICATE: This tutor is already assigned to this lesson.")
+
+    # Clash — lesson already has a different assigned tutor and force_reassign not set
+    existing_teacher_id = lesson.get("assigned_teacher_id")
+    if existing_teacher_id and existing_teacher_id != teacher_id and not force_reassign:
+        existing_name = lesson.get("assigned_teacher_name", existing_teacher_id)
+        raise ValueError(f"CLASH: This lesson already has an assigned tutor ({existing_name}). Confirm re-assignment to proceed.")
+
     if not already and len(assigned) >= max_t:
-        raise ValueError(f"This lesson is full — {max_t} tutor(s) already assigned (max).")
+        raise ValueError(f"FULL: This lesson is full — {max_t} tutor(s) already assigned (max).")
 
     repos.upsert_offer(db, lesson_id, teacher_id, offer_status="assigned", responded_at=_iso_now())
-    updates = {"tutor_assignment": "Tutor assigned"}
-    if not lesson.get("assigned_teacher_id"):
-        updates["teacher_id"] = teacher_id  # primary tutor — drives the schedule colour
+
+    # Always set teacher_id to the newly assigned tutor (primary tutor drives schedule colour)
+    updates = {"tutor_assignment": "Tutor assigned", "teacher_id": teacher_id}
+
+    # Update lesson status to Assigned when the required number of tutors is met
+    new_assigned_count = len(assigned) + 1  # +1 for the one we just assigned
+    if new_assigned_count >= max_t:
+        updates["status"] = "Assigned"
+    else:
+        # Still needs more tutors — keep HasAcceptance status so it stays visible
+        current_status = (lesson.get("raw_status") or "").lower()
+        if current_status not in ("assigned", "completed", "cancelled", "rescheduled"):
+            updates["status"] = "HasAcceptance"
+
     repos.update_row(db, "lessons", lesson_id, updates)
-    repos.log_event(db, lesson_id, teacher_id, "assign", {})
+    repos.log_event(db, lesson_id, teacher_id, "assign", {"force_reassign": force_reassign})
 
     result: dict | None = None
     if send_files:
@@ -189,8 +224,8 @@ def assign_tutor(db: Client, lesson_id: str, teacher_id: str, *, send_files: boo
     return {
         "lesson_id": lesson_id,
         "assigned_teacher_id": teacher_id,
-        "status": "assigned",
-        "assigned_count": len(assigned) + (0 if already else 1),
+        "status": "assigned" if new_assigned_count >= max_t else "hasacceptance",
+        "assigned_count": new_assigned_count,
         "max_tutors": max_t,
         "confirmation": result,
     }
@@ -209,7 +244,11 @@ def handle_cancellation(db: Client, lesson_id: str, teacher_id: str | None, inte
         if lesson.get("within_a_week")
         else "Tutor unassigned & class is beyond a week from today"
     )
-    repos.update_row(db, "lessons", lesson_id, {"teacher_id": None, "tutor_assignment": unassigned_label})
+    repos.update_row(db, "lessons", lesson_id, {
+        "teacher_id": None,
+        "tutor_assignment": unassigned_label,
+        "status": "OfferSent",  # reblast will go out; keep visible in dashboard
+    })
     if teacher_id:
         repos.set_offer_status(db, lesson_id, teacher_id, "withdrawn", responded_at=_iso_now())
     repos.log_event(db, lesson_id, teacher_id, "reschedule" if intent == "reschedule" else "cancel", {})

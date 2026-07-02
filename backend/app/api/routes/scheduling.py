@@ -35,9 +35,13 @@ def run_due_reminders(token: str = Query(default=""), db: Client = Depends(get_s
 
 @router.get("/lessons/{lesson_id}/accepted")
 def accepted_pool(lesson_id: str, db: Client = Depends(get_supabase)):
-    """Tutors who accepted — the candidates the admin chooses from."""
+    """Tutors who accepted — the candidates the admin chooses from.
+    Sorted by reliability_score descending (highest score first, per PRD).
+    """
     ids = repos.accepted_teacher_ids(db, lesson_id)
-    return [repos.get_row(db, "teachers", tid) for tid in ids]
+    teachers = [t for t in (repos.get_row(db, "teachers", tid) for tid in ids) if t]
+    teachers.sort(key=lambda t: (t.get("reliability_score") or 0), reverse=True)
+    return teachers
 
 
 @router.post("/announce-lesson")
@@ -58,11 +62,27 @@ def announce_lesson(body: AnnounceLessonRequest, db: Client = Depends(get_supaba
 
 @router.post("/lessons/{lesson_id}/assign")
 def assign(lesson_id: str, body: AssignRequest, db: Client = Depends(get_supabase)):
-    """Assign an accepted tutor and (by default) send the material link."""
+    """Assign an accepted tutor and (by default) send the material link.
+
+    Returns 409 with {error_code: 'CLASH'|'DUPLICATE'|'FULL', detail: str} for
+    assignment constraint violations so the frontend can show targeted UI.
+    """
+    from fastapi.responses import JSONResponse
     try:
-        return scheduling.assign_tutor(db, lesson_id, body.teacher_id, send_files=body.send_files)
+        return scheduling.assign_tutor(
+            db, lesson_id, body.teacher_id,
+            send_files=body.send_files,
+            force_reassign=body.force_reassign,
+        )
     except ValueError as exc:
-        raise HTTPException(400, str(exc))
+        msg = str(exc)
+        if msg.startswith("DUPLICATE:"):
+            return JSONResponse(status_code=409, content={"error_code": "DUPLICATE", "detail": msg[10:].strip()})
+        if msg.startswith("CLASH:"):
+            return JSONResponse(status_code=409, content={"error_code": "CLASH", "detail": msg[6:].strip()})
+        if msg.startswith("FULL:"):
+            return JSONResponse(status_code=409, content={"error_code": "FULL", "detail": msg[5:].strip()})
+        raise HTTPException(400, msg)
 
 
 @router.post("/lessons/{lesson_id}/send-confirmation")
