@@ -31,9 +31,8 @@ export default function Sidebar() {
 
   // Upcoming phases, filtered by role (Finances is Admin-only, s.12).
   const future = [
-    { to: '/lessons', label: 'Lesson Dashboard', Icon: DashboardIcon, phase: 'P2' },
-    ...(isAdmin ? [{ to: '/finances', label: 'Finances', Icon: MoneyIcon, phase: 'P3' }] : []),
-    { to: '/urgent', label: 'Urgent News', Icon: AlertIcon, phase: 'P4' },
+    ...(isAdmin ? [{ to: '/finances', label: 'Finances', Icon: MoneyIcon, phase: 'P4' }] : []),
+    { to: '/urgent', label: 'Urgent News', Icon: AlertIcon, phase: 'P5' },
   ]
 
   return (
@@ -43,8 +42,9 @@ export default function Sidebar() {
         <span>Vinci&nbsp;Automation</span>
       </div>
 
-      <div className="sidebar__section">Phase 1 — Live</div>
+      <div className="sidebar__section">Live</div>
       <Item to="/schedule" label="Schedule" Icon={CalendarIcon} />
+      <Item to="/lessons" label="Lesson Dashboard" Icon={DashboardIcon} />
       <button type="button" className={'nav-item nav-item--btn' + (open ? ' active' : '')} onClick={openAssistant}>
         <ChatIcon />
         <span>Assistant</span>
