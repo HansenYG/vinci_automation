@@ -58,14 +58,7 @@ export default function SchedulePage() {
       <PageHeader
         title="Schedule"
         subtitle="The main hub — every lesson at a glance, colour-coded by status."
-        actions={
-          <button
-            className="btn btn--primary"
-            onClick={() => { setDockOpen(true); setDockTab('data') }}
-          >
-            + New lesson
-          </button>
-        }
+        actions={null}
       />
 
       <div className="content">
