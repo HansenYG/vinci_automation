@@ -1,36 +1,32 @@
 import { useEffect, useState } from 'react'
 import {
-  announceLesson, createCourse, createSchool, createTeacher, exportUrl, getSchools,
+  announceLesson, createCourse, createLesson, createSchool, createTeacher,
+  exportUrl, getCourses, getSchools,
 } from '../../services/endpoints'
+import { useLessonsContext as useLessons } from '../../context/LessonsContext'
 
 const DATASETS = ['lessons', 'unassigned', 'urgent', 'teachers', 'courses', 'schools']
 const TABS = ['lesson', 'teacher', 'course', 'school']
 
-// Admin "input boxes". IDs/codes are generated server-side (following the
-// existing data's format), so they're never typed here.
 export default function QuickInputPanel() {
   const [tab, setTab] = useState('lesson')
   const [schools, setSchools] = useState([])
   const [msg, setMsg] = useState('')
-
   const reloadSchools = () => getSchools().then(setSchools).catch(() => setSchools([]))
   useEffect(() => { reloadSchools() }, [])
-
-  const flash = (t) => { setMsg(t); window.clearTimeout(flash._t); flash._t = window.setTimeout(() => setMsg(''), 3000) }
+  const flash = (t) => { setMsg(t); window.clearTimeout(flash._t); flash._t = window.setTimeout(() => setMsg(''), 3500) }
 
   return (
     <div>
       <div className="card side-card">
         <h3>Quick input</h3>
-        <p className="hint">Add data directly, or announce a lesson to tutors. IDs are auto-generated.</p>
+        <p className="hint">Add data directly or announce a lesson to tutors. IDs are auto-generated.</p>
         <div className="tabs">
           {TABS.map((t) => (
             <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>
           ))}
         </div>
-
-        {tab === 'lesson' && <LessonAnnounceForm onFlash={flash} />}
-
+        {tab === 'lesson' && <LessonForm onFlash={flash} />}
         {tab === 'teacher' && (
           <MiniForm
             fields={[['teacher_name', 'Full name', true], ['whatsapp_number', 'WhatsApp (digits)'], ['email', 'Email']]}
@@ -64,58 +60,140 @@ export default function QuickInputPanel() {
           ))}
         </div>
       </div>
-
       {msg && <div className="toast">{msg}</div>}
     </div>
   )
 }
 
-// --- Lesson tab: create a lesson (code auto-generated) + LLM tutor outreach ---
-function LessonAnnounceForm({ onFlash }) {
-  const [v, setV] = useState({ date: '', start_time: '', end_time: '', course: '', school: '', max_tutors: '1', lesson_income: '' })
+// ─── Unified lesson form ─────────────────────────────────────────────────────
+// mode "create"   → POST /api/lessons  (saves to DB, no WhatsApp blast)
+// mode "announce" → POST /api/scheduling/announce-lesson (creates + sends blasts)
+function LessonForm({ onFlash }) {
+  const { invalidate } = useLessons()
+  const [courses, setCourses] = useState([])
+  const [mode, setMode] = useState('create')
+  const [v, setV] = useState({
+    course_id: '', date: '', start_time: '', end_time: '',
+    lesson_material_link: '', max_tutors: '1', lesson_income: '',
+    course: '', school: '',
+  })
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
+
+  useEffect(() => { getCourses().then(setCourses).catch(() => setCourses([])) }, [])
+
   const set = (k) => (e) => setV((s) => ({ ...s, [k]: e.target.value }))
 
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true); setResult(null)
     try {
-      const body = Object.fromEntries(Object.entries(v).filter(([, val]) => val !== ''))
-      const r = await announceLesson(body)
-      setResult(r)
-      onFlash?.(`${r.lesson_code} · messaged ${r.count}`)
+      if (mode === 'create') {
+        const body = Object.fromEntries(
+          Object.entries({
+            course_id: v.course_id || undefined,
+            date: v.date,
+            start_time: v.start_time || undefined,
+            end_time: v.end_time || undefined,
+            lesson_material_link: v.lesson_material_link || undefined,
+            max_tutors: v.max_tutors ? Number(v.max_tutors) : undefined,
+            lesson_income: v.lesson_income ? Number(v.lesson_income) : undefined,
+          }).filter(([, val]) => val !== undefined && val !== '')
+        )
+        const created = await createLesson(body)
+        invalidate()
+        setResult({ created: true, code: created.lesson_code || created.lesson_id })
+        onFlash?.(`Lesson ${created.lesson_code || created.lesson_id} created`)
+        setV({ course_id: '', date: '', start_time: '', end_time: '', lesson_material_link: '', max_tutors: '1', lesson_income: '', course: '', school: '' })
+      } else {
+        const body = Object.fromEntries(
+          Object.entries({
+            course_id: v.course_id || undefined,
+            course: v.course || undefined,
+            school: v.school || undefined,
+            date: v.date,
+            start_time: v.start_time || undefined,
+            end_time: v.end_time || undefined,
+            max_tutors: v.max_tutors ? Number(v.max_tutors) : undefined,
+            lesson_income: v.lesson_income ? Number(v.lesson_income) : undefined,
+          }).filter(([, val]) => val !== undefined && val !== '')
+        )
+        const r = await announceLesson(body)
+        invalidate()
+        setResult(r)
+        onFlash?.(`${r.lesson_code} · messaged ${r.count}`)
+      }
     } catch (e2) {
-      setResult({ error: e2?.response?.data?.detail || 'Could not send. Is the backend up?' })
+      setResult({ error: e2?.response?.data?.detail || 'Could not save. Is the backend up?' })
     } finally {
       setBusy(false)
     }
   }
 
+  const isAnnounce = mode === 'announce'
+
   return (
     <form className="side-form" onSubmit={submit}>
+      {/* Mode toggle */}
+      <div className="tabs" style={{ marginBottom: 10 }}>
+        <button type="button" className={mode === 'create' ? 'active' : ''} onClick={() => { setMode('create'); setResult(null) }}>
+          Create only
+        </button>
+        <button type="button" className={mode === 'announce' ? 'active' : ''} onClick={() => { setMode('announce'); setResult(null) }}>
+          Create &amp; announce
+        </button>
+      </div>
+
+      <span className="mini-label">Course</span>
+      <select value={v.course_id} onChange={set('course_id')}>
+        <option value="">— select course —</option>
+        {courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
+      </select>
+
+      {isAnnounce && !v.course_id && (
+        <>
+          <span className="mini-label">Or type course name</span>
+          <input value={v.course} onChange={set('course')} placeholder="Advanced Robotics Workshop" />
+          <span className="mini-label">School</span>
+          <input value={v.school} onChange={set('school')} placeholder="Harvard University" />
+        </>
+      )}
+
       <span className="mini-label">Date</span>
       <input type="date" value={v.date} onChange={set('date')} required />
+
       <span className="mini-label">Time</span>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input type="time" value={v.start_time} onChange={set('start_time')} style={{ flex: 1 }} />
         <span className="muted">–</span>
         <input type="time" value={v.end_time} onChange={set('end_time')} style={{ flex: 1 }} />
       </div>
-      <span className="mini-label">Course</span>
-      <input value={v.course} onChange={set('course')} placeholder="Advanced Robotics Workshop" />
-      <span className="mini-label">School</span>
-      <input value={v.school} onChange={set('school')} placeholder="Harvard University" />
+
+      {!isAnnounce && (
+        <>
+          <span className="mini-label">Material link (optional)</span>
+          <input value={v.lesson_material_link} onChange={set('lesson_material_link')} placeholder="https://…" />
+        </>
+      )}
+
       <span className="mini-label">Number of tutors</span>
       <input type="number" min="1" value={v.max_tutors} onChange={set('max_tutors')} />
+
       <span className="mini-label">Lesson income (HKD)</span>
       <input type="number" min="0" step="0.01" value={v.lesson_income} onChange={set('lesson_income')} placeholder="0.00" />
 
       <button className="btn btn--primary btn--sm" type="submit" disabled={busy || !v.date}>
-        {busy ? 'Finding tutors…' : 'Find tutors & send'}
+        {busy
+          ? (isAnnounce ? 'Finding tutors…' : 'Saving…')
+          : (isAnnounce ? 'Find tutors & send' : 'Create lesson')}
       </button>
 
-      {result && !result.error && (
+      {result && !result.error && mode === 'create' && result.created && (
+        <div className="announce-result">
+          <strong>{result.code}</strong> created successfully
+        </div>
+      )}
+      {result && !result.error && mode === 'announce' && (
         <div className="announce-result">
           <strong>{result.lesson_code}</strong> created
           <div className="announce-row">Messaged {result.count} tutor(s) · {result.llm_used ? 'AI-selected' : 'rule-based'}</div>
@@ -130,11 +208,11 @@ function LessonAnnounceForm({ onFlash }) {
   )
 }
 
+// ─── Generic mini form ───────────────────────────────────────────────────────
 function MiniForm({ fields, select, onSubmit, onDone }) {
   const [v, setV] = useState({})
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setV((s) => ({ ...s, [k]: e.target.value }))
-
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
@@ -146,9 +224,7 @@ function MiniForm({ fields, select, onSubmit, onDone }) {
     } catch { onDone?.(null) }
     finally { setBusy(false) }
   }
-
   const required = fields.find(([, , req]) => req)?.[0]
-
   return (
     <form className="side-form" onSubmit={submit}>
       {fields.map(([key, label, req]) => (

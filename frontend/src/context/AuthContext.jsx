@@ -73,19 +73,23 @@ export function AuthProvider({ children }) {
       if (mounted) setLoading(false)
     })
 
-    // 2) React to future auth changes (login, logout, token refresh).
+    // 2) React to future auth changes (login / logout only).
+    // TOKEN_REFRESH fires on every tab-focus (Supabase silently refreshes the
+    // JWT in the background). Treating it as a full re-auth would re-run
+    // refreshProfile(), show "checking your access", and wipe chat history.
+    // INITIAL_SESSION fires synchronously with getSession() above — skip it
+    // to avoid a duplicate /me call on first load.
+    const SKIP_EVENTS = new Set(['TOKEN_REFRESH', 'USER_UPDATED', 'INITIAL_SESSION', 'MFA_CHALLENGE_VERIFIED'])
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
       if (!mounted) return
+      if (SKIP_EVENTS.has(event)) return          // ← key fix: ignore background refreshes
       setSession(s)
-      if (s) {
-        // On a brand-new sign-in, clear any stale profile and mark loading so
-        // the login redirect waits for the role to resolve.
-        if (event === 'SIGNED_IN') {
-          setProfile(null)
-          setProfileLoading(true)
-        }
+      if (event === 'SIGNED_IN' && s) {
+        // Clear stale profile and wait for role before redirecting.
+        setProfile(null)
+        setProfileLoading(true)
         await refreshProfile(s)
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setProfile(null)
         setProfileLoading(false)
       }

@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '../../components/layout/Layout'
 import { ChevronLeft, ChevronRight } from '../../components/layout/Icons'
 import LessonDetailDrawer from './LessonDetailDrawer'
-import NewLessonModal from './NewLessonModal'
 import { DayView, MonthView, WeekView } from './views'
 import { addDays, addMonths, addWeeks, periodLabel, rangeFor } from './dates'
 import { useSchedule } from './useSchedule'
 import { useLessonsContext } from '../../context/LessonsContext'
+import { useDock } from '../chatbot/dockContext'
 import './schedule.css'
 
 const VIEWS = ['month', 'week', 'day']
@@ -28,8 +28,8 @@ export default function SchedulePage() {
   const [view, setView] = useState('month')
   const [anchor, setAnchor] = useState(new Date())
   const [selected, setSelected] = useState(null)
-  const [creating, setCreating] = useState(false)
   const [zoom, setZoom] = useState(() => clampZoom(Number(localStorage.getItem('vinci.calzoom')) || 1))
+  const { setOpen: setDockOpen, setTab: setDockTab } = useDock()
 
   useEffect(() => { localStorage.setItem('vinci.calzoom', String(zoom)) }, [zoom])
 
@@ -58,7 +58,14 @@ export default function SchedulePage() {
       <PageHeader
         title="Schedule"
         subtitle="The main hub — every lesson at a glance, colour-coded by status."
-        actions={<button className="btn btn--primary" onClick={() => setCreating(true)}>+ New lesson</button>}
+        actions={
+          <button
+            className="btn btn--primary"
+            onClick={() => { setDockOpen(true); setDockTab('data') }}
+          >
+            + New lesson
+          </button>
+        }
       />
 
       <div className="content">
@@ -110,7 +117,7 @@ export default function SchedulePage() {
           sourceView="schedule"
         />
       )}
-      {creating && <NewLessonModal onClose={() => setCreating(false)} onCreated={handleChanged} />}
+      {/* NewLessonModal replaced by the unified QuickInputPanel in the assistant dock */}
     </>
   )
 }
