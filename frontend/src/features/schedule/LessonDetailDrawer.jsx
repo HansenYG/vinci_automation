@@ -6,7 +6,7 @@
  *   1. onChanged()  — so the parent view refreshes its own data
  *   2. invalidate() — so the OTHER view (via LessonsContext) also refreshes
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CloseIcon, SendIcon } from '../../components/layout/Icons'
 import {
@@ -39,6 +39,8 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
   const [busy, setBusy]         = useState(false)
   const [msg, setMsg]           = useState('')
   const [msgType, setMsgType]   = useState('info')
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const cancelTimerRef = useRef(null)
 
   const { invalidate } = useLessonsContext()
   const navigate = useNavigate()
@@ -185,6 +187,44 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
                   onClick={() => run(() => resendConfirmation(lessonId), (r) => r.confirmation?.ok ? 'Confirmation re-sent.' : 'Send failed.')}>
                   Resend confirmation + files
                 </button>
+              )}
+              {/* Cancel lesson — only shown when lesson is not already cancelled */}
+              {(lesson.status || '').toLowerCase() !== 'cancelled' && (
+                confirmCancel ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', width: '100%', marginTop: 4 }}>
+                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>Mark this lesson as Cancelled?</span>
+                    <button
+                      className="btn btn--sm"
+                      style={{ background: '#dc2626', color: '#fff', border: '1px solid #dc2626' }}
+                      disabled={busy}
+                      onClick={() => {
+                        clearTimeout(cancelTimerRef.current)
+                        setConfirmCancel(false)
+                        run(
+                          () => updateLesson(lessonId, { status: 'cancelled' }),
+                          () => { setTimeout(() => onClose?.(), 800); return 'Lesson cancelled.' }
+                        )
+                      }}
+                    >
+                      Yes, cancel it
+                    </button>
+                    <button className="btn btn--sm" disabled={busy} onClick={() => { clearTimeout(cancelTimerRef.current); setConfirmCancel(false) }}>
+                      No, keep
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="btn btn--sm"
+                    style={{ color: '#dc2626', borderColor: '#dc2626' }}
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirmCancel(true)
+                      cancelTimerRef.current = setTimeout(() => setConfirmCancel(false), 8000)
+                    }}
+                  >
+                    Cancel lesson
+                  </button>
+                )
               )}
             </div>
           </div>

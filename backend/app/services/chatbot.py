@@ -14,7 +14,7 @@ the chat layer points the admin at them.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 
 import httpx
 from supabase import Client
@@ -123,7 +123,9 @@ def _llm_chat(
 
 def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     """Free-form answer via LLM, grounded with a live DB snapshot."""
-    today = date.today().isoformat()
+    now = datetime.now()
+    today = now.date().isoformat()
+    day_name = now.strftime("%A")   # e.g. "Wednesday"
     counts = _counts(db)
     upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:12]]
     unassigned_all = repos.list_unassigned(db, 1000)
@@ -134,6 +136,10 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "Be concise and helpful. Base every fact ONLY on the data snapshot below — "
         "if it isn't there, say you don't have that detail rather than guessing. "
         "To change data, tell the user to use the Data tab / input forms.\n\n"
+        f"TODAY is {day_name} {today} (YYYY-MM-DD). "
+        "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
+        "'next week', 'this week', 'next Monday', etc. "
+        "When the user asks about a relative date, compute the exact date from this reference.\n"
         f"COUNTS: {counts}\n"
         f"UNASSIGNED lessons total={len(unassigned_all)}, soonest: {[_fmt(r) for r in unassigned_all[:12]]}\n"
         f"URGENT (within a week) total={len(urgent_all)}: "
