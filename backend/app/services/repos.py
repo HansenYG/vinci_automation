@@ -105,24 +105,37 @@ def list_dashboard(
     When a status filter is provided or show_all=True:
       Shows all matching lessons sorted by lesson_date ascending.
 
-    Returns {items: [...], total: int, page: int, page_size: int, pages: int}.
+    Returns {items: [...], total: int, page: int, page_size: int, pages: int, counts: {...}}.
     """
     import math
 
-    q = db.table(SCHEDULE_VIEW).select("*", count="exact")
+    # ── Helpers ──────────────────────────────────────────────────────────
+    def _base_q():
+        q = db.table(SCHEDULE_VIEW).select("*", count="exact")
+        if date_from:
+            q = q.gte("lesson_date", date_from)
+        if date_to:
+            q = q.lte("lesson_date", date_to)
+        if course_id:
+            q = q.eq("course_id", course_id)
+        if teacher_id:
+            q = q.eq("assigned_teacher_id", teacher_id)
+        return q
 
-    if date_from:
-        q = q.gte("lesson_date", date_from)
-    if date_to:
-        q = q.lte("lesson_date", date_to)
-    if course_id:
-        q = q.eq("course_id", course_id)
-    if teacher_id:
-        q = q.eq("assigned_teacher_id", teacher_id)
+    def _count(status_in=None, status_eq=None, within_week=False):
+        q = _base_q()
+        if status_in:
+            q = q.in_("status", status_in)
+        elif status_eq:
+            q = q.eq("status", status_eq)
+        if within_week:
+            q = q.eq("within_a_week", True)
+        return q.execute().count or 0
 
+    # ── Status filter path ──────────────────────────────────────────────
     if status:
-        # Explicit status filter — show whatever was requested
         statuses = [s.strip().lower() for s in status.split(",") if s.strip()]
+        q = _base_q()
         if len(statuses) == 1:
             q = q.eq("status", statuses[0])
         elif statuses:
@@ -132,54 +145,50 @@ def list_dashboard(
         q = q.range(offset, offset + page_size - 1)
         res = q.execute()
         total = res.count or 0
-        pages = math.ceil(total / page_size) if page_size > 0 else 1
-        return {"items": res.data or [], "total": total, "page": page, "page_size": page_size, "pages": pages}
 
+        uo = [s for s in statuses if s in ("unassigned", "offersent")]
+        ha = [s for s in statuses if s == "hasacceptance"]
+        urg = [s for s in statuses if s in ("unassigned", "offersent", "hasacceptance")]
+        counts = {
+            "total": total,
+            "unassigned_offersent": _count(status_in=uo) if uo else 0,
+            "has_acceptance": _count(status_eq="hasacceptance") if ha else 0,
+            "urgent": _count(status_in=urg, within_week=True) if urg else 0,
+        }
+
+        pages = math.ceil(total / page_size) if page_size > 0 else 1
+        return {"items": res.data or [], "total": total, "page": page, "page_size": page_size, "pages": pages, "counts": counts}
+
+    # ── Show-all path ───────────────────────────────────────────────────
     if show_all:
-        # Admin explicitly wants all lessons
-        q = q.order("lesson_date", desc=False).order("start_time", desc=False)
+        q = _base_q().order("lesson_date", desc=False).order("start_time", desc=False)
         offset = (page - 1) * page_size
         q = q.range(offset, offset + page_size - 1)
         res = q.execute()
         total = res.count or 0
+
+        counts = {
+            "total": total,
+            "unassigned_offersent": _count(status_in=["unassigned", "offersent"]),
+            "has_acceptance": _count(status_eq="hasacceptance"),
+            "urgent": _count(status_in=["unassigned", "offersent", "hasacceptance"], within_week=True),
+        }
+
         pages = math.ceil(total / page_size) if page_size > 0 else 1
-        return {"items": res.data or [], "total": total, "page": page, "page_size": page_size, "pages": pages}
+        return {"items": res.data or [], "total": total, "page": page, "page_size": page_size, "pages": pages, "counts": counts}
 
-    # Default: action-needed only, two-bucket urgency sort (PRD §3.2)
-    # Bucket 1: no acceptances (unassigned / offersent) — sorted by date asc
-    # Bucket 2: has acceptances but not assigned (hasacceptance) — sorted by date asc
-    q_no_accept = (
-        db.table(SCHEDULE_VIEW)
-        .select("*")
-        .in_("status", ["unassigned", "offersent"])
-    )
-    q_has_accept = (
-        db.table(SCHEDULE_VIEW)
-        .select("*")
-        .eq("status", "hasacceptance")
-    )
-    if date_from:
-        q_no_accept = q_no_accept.gte("lesson_date", date_from)
-        q_has_accept = q_has_accept.gte("lesson_date", date_from)
-    if date_to:
-        q_no_accept = q_no_accept.lte("lesson_date", date_to)
-        q_has_accept = q_has_accept.lte("lesson_date", date_to)
-    if course_id:
-        q_no_accept = q_no_accept.eq("course_id", course_id)
-        q_has_accept = q_has_accept.eq("course_id", course_id)
-    if teacher_id:
-        q_no_accept = q_no_accept.eq("assigned_teacher_id", teacher_id)
-        q_has_accept = q_has_accept.eq("assigned_teacher_id", teacher_id)
-
+    # ── Default: action-needed only, two-bucket urgency sort (PRD §3.2) ─
     bucket1 = (
-        q_no_accept
+        _base_q()
+        .in_("status", ["unassigned", "offersent"])
         .order("lesson_date", desc=False)
         .order("start_time", desc=False)
         .execute()
         .data or []
     )
     bucket2 = (
-        q_has_accept
+        _base_q()
+        .eq("status", "hasacceptance")
         .order("lesson_date", desc=False)
         .order("start_time", desc=False)
         .execute()
@@ -190,8 +199,22 @@ def list_dashboard(
     total = len(all_items)
     pages = math.ceil(total / page_size) if page_size > 0 else 1
     offset = (page - 1) * page_size
-    items = all_items[offset: offset + page_size]
-    return {"items": items, "total": total, "page": page, "page_size": page_size, "pages": pages}
+
+    counts = {
+        "total": total,
+        "unassigned_offersent": len(bucket1),
+        "has_acceptance": len(bucket2),
+        "urgent": sum(1 for item in all_items if item.get("within_a_week")),
+    }
+
+    return {
+        "items": all_items[offset: offset + page_size],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+        "counts": counts,
+    }
 
 
 def get_lesson_view(db: Client, lesson_id: str) -> dict | None:

@@ -3,7 +3,7 @@ import { format, isSameDay, isSameMonth, lessonsOn, monthMatrix, weekDays } from
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-export function MonthView({ lessons, anchor, onSelect }) {
+export function MonthView({ lessons, anchor, onSelect, onDayClick }) {
   const days = monthMatrix(anchor)
   const today = new Date()
   return (
@@ -15,6 +15,7 @@ export function MonthView({ lessons, anchor, onSelect }) {
           <div
             key={day.toISOString()}
             className={'month-cell' + (isSameMonth(day, anchor) ? '' : ' dim') + (isSameDay(day, today) ? ' today' : '')}
+            onClick={() => onDayClick?.(day)}
           >
             <span className="month-cell__date">{format(day, 'd')}</span>
             {dl.map((l) => <LessonChip key={l.id} lesson={l} onClick={onSelect} />)}
@@ -25,7 +26,7 @@ export function MonthView({ lessons, anchor, onSelect }) {
   )
 }
 
-export function WeekView({ lessons, anchor, onSelect }) {
+export function WeekView({ lessons, anchor, onSelect, onDayClick }) {
   const days = weekDays(anchor)
   const today = new Date()
   return (
@@ -33,7 +34,11 @@ export function WeekView({ lessons, anchor, onSelect }) {
       {days.map((day) => {
         const dl = lessonsOn(lessons, day)
         return (
-          <div key={day.toISOString()} className={'week-col' + (isSameDay(day, today) ? ' today' : '')}>
+          <div
+            key={day.toISOString()}
+            className={'week-col' + (isSameDay(day, today) ? ' today' : '')}
+            onClick={() => onDayClick?.(day)}
+          >
             <div className="week-col__head">{format(day, 'EEE')}<small>{format(day, 'd MMM')}</small></div>
             {dl.length
               ? dl.map((l) => <LessonChip key={l.id} lesson={l} onClick={onSelect} />)

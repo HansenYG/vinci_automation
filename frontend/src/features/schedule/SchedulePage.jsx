@@ -44,6 +44,11 @@ export default function SchedulePage() {
 
   const ViewComp = view === 'month' ? MonthView : view === 'week' ? WeekView : DayView
 
+  const handleDayClick = (day) => {
+    setView('day')
+    setAnchor(day)
+  }
+
   // keep the open drawer in sync with refreshed data
   const selectedLive = selected ? lessons.find((l) => l.id === selected.id) || selected : null
 
@@ -98,7 +103,7 @@ export default function SchedulePage() {
         </div>}
 
         <div className="cal-zoom" style={{ '--zoom': zoom }}>
-          {loading ? <div className="spinner" /> : <ViewComp lessons={lessons} anchor={anchor} onSelect={setSelected} />}
+          {loading ? <div className="spinner" /> : <ViewComp lessons={lessons} anchor={anchor} onSelect={setSelected} onDayClick={handleDayClick} />}
         </div>
       </div>
 
