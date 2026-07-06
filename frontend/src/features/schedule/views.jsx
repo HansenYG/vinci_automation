@@ -3,7 +3,7 @@ import { format, isSameDay, isSameMonth, lessonsOn, monthMatrix, weekDays } from
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-export function MonthView({ lessons, anchor, onSelect }) {
+export function MonthView({ lessons, anchor, onSelect, onDayClick }) {
   const days = monthMatrix(anchor)
   const today = new Date()
   return (
@@ -16,7 +16,9 @@ export function MonthView({ lessons, anchor, onSelect }) {
             key={day.toISOString()}
             className={'month-cell' + (isSameMonth(day, anchor) ? '' : ' dim') + (isSameDay(day, today) ? ' today' : '')}
           >
-            <span className="month-cell__date">{format(day, 'd')}</span>
+            <button className="month-cell__date" onClick={() => onDayClick?.(day)}>
+              {format(day, 'd')}
+            </button>
             {dl.map((l) => <LessonChip key={l.id} lesson={l} onClick={onSelect} />)}
           </div>
         )
@@ -25,7 +27,7 @@ export function MonthView({ lessons, anchor, onSelect }) {
   )
 }
 
-export function WeekView({ lessons, anchor, onSelect }) {
+export function WeekView({ lessons, anchor, onSelect, onDayClick }) {
   const days = weekDays(anchor)
   const today = new Date()
   return (
@@ -33,8 +35,13 @@ export function WeekView({ lessons, anchor, onSelect }) {
       {days.map((day) => {
         const dl = lessonsOn(lessons, day)
         return (
-          <div key={day.toISOString()} className={'week-col' + (isSameDay(day, today) ? ' today' : '')}>
-            <div className="week-col__head">{format(day, 'EEE')}<small>{format(day, 'd MMM')}</small></div>
+          <div
+            key={day.toISOString()}
+            className={'week-col' + (isSameDay(day, today) ? ' today' : '')}
+          >
+            <button className="week-col__head" onClick={() => onDayClick?.(day)}>
+              {format(day, 'EEE')}<small>{format(day, 'd MMM')}</small>
+            </button>
             {dl.length
               ? dl.map((l) => <LessonChip key={l.id} lesson={l} onClick={onSelect} />)
               : <span className="muted" style={{ fontSize: 12 }}>—</span>}

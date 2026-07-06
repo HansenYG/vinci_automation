@@ -151,8 +151,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "Example:\n"
         'User: "Move the IGCSE Physics lesson on July 10 to 16:00"\n'
         "Assistant: I can reschedule lesson L-2026-010 (IGCSE Physics) from July 10 14:00 to July 10 16:00. Shall I proceed?\n"
-        'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n"
-        f"TODAY is {day_name} {today} (YYYY-MM-DD). "
+         'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
+         f"TODAY is {day_name} {today} (YYYY-MM-DD). "
         "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
         "'next week', 'this week', 'next Monday', etc. "
         "When the user asks about a relative date, compute the exact date from this reference.\n"

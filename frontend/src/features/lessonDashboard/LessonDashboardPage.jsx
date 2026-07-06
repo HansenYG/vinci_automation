@@ -157,12 +157,16 @@ export default function LessonDashboardPage() {
 
   const handleFilterChange = (setter) => (e) => { setter(e.target.value); setPage(1) }
 
-  // Stats: computed from the current page's items.
-  // The default (action-needed) view fetches all matching records server-side
-  // so stats are accurate for that view.  When filters or "Show all" are active
-  // the backend paginates at the query level, so per-status counts reflect only
-  // the current page.
+  // Stats: use server-side counts when available (accurate across pages).
   const stats = useMemo(() => {
+    if (result.counts) {
+      return {
+        total:         result.counts.total,
+        noAcceptance:  result.counts.unassigned_offersent,
+        hasAcceptance: result.counts.has_acceptance,
+        urgent:        result.counts.urgent,
+      }
+    }
     const items = result.items || []
     return {
       total:         result.total,
