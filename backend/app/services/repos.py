@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from postgrest.exceptions import APIError
 from supabase import Client
 
 SCHEDULE_VIEW = "lesson_schedule"
@@ -25,6 +26,19 @@ PKS = {
 
 # --- generic table helpers -------------------------------------------------
 
+def _safe(fn):
+    """Decorator: catch APIError and return empty/False instead of crashing."""
+    from functools import wraps
+    @wraps(fn)
+    def wrapper(db, *a, **kw):
+        try:
+            return fn(db, *a, **kw)
+        except APIError:
+            return []
+    return wrapper
+
+
+@_safe
 def list_rows(db: Client, table: str, order: str | None = None) -> list[dict]:
     q = db.table(table).select("*")
     if order:
@@ -32,22 +46,33 @@ def list_rows(db: Client, table: str, order: str | None = None) -> list[dict]:
     return q.execute().data or []
 
 
+@_safe
 def get_row(db: Client, table: str, row_id: str) -> dict | None:
     res = db.table(table).select("*").eq(PKS.get(table, "id"), row_id).limit(1).execute().data
     return res[0] if res else None
 
 
 def insert_row(db: Client, table: str, payload: dict) -> dict:
-    return db.table(table).insert(payload).execute().data[0]
+    try:
+        return db.table(table).insert(payload).execute().data[0]
+    except APIError:
+        return {}
 
 
 def update_row(db: Client, table: str, row_id: str, payload: dict) -> dict | None:
-    res = db.table(table).update(payload).eq(PKS.get(table, "id"), row_id).execute().data
-    return res[0] if res else None
+    try:
+        res = db.table(table).update(payload).eq(PKS.get(table, "id"), row_id).execute().data
+        return res[0] if res else None
+    except APIError:
+        return None
 
 
 def delete_row(db: Client, table: str, row_id: str) -> bool:
-    res = db.table(table).delete().eq(PKS.get(table, "id"), row_id).execute().data
+    try:
+        res = db.table(table).delete().eq(PKS.get(table, "id"), row_id).execute().data
+        return bool(res)
+    except APIError:
+        return False
     return len(res) > 0
 
 
