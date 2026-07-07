@@ -66,27 +66,24 @@ def _supabase_base(user_token: str = "") -> str:
     base = settings.SUPABASE_URL.rstrip("/")
     if base:
         return base
-    # Fallback 1: derive from the service_role key JWT issuer.
-    try:
-        unverified = jwt.get_unverified_claims(settings.SUPABASE_KEY)
-        iss = unverified.get("iss", "")
-        if iss:
-            return iss.rstrip("/auth/v1").rstrip("/")
-    except (JWTError, Exception):
-        pass
-    # Fallback 2: derive from the user's access token issuer.
-    if user_token:
+    # Fallback: try each known key JWT for the project URL.
+    # The token's issuer claim looks like
+    # "https://<project>.supabase.co/auth/v1"; the API keys have
+    # iss="supabase" (not a URL) so we ignore those.
+    for candidate in [settings.SUPABASE_KEY, settings.SUPABASE_ANON_KEY, user_token]:
+        if not candidate:
+            continue
         try:
-            unverified = jwt.get_unverified_claims(user_token)
+            unverified = jwt.get_unverified_claims(candidate)
             iss = unverified.get("iss", "")
-            if iss:
+            if iss and iss.startswith("http"):
                 return iss.rstrip("/auth/v1").rstrip("/")
         except (JWTError, Exception):
             pass
     return ""
 
 
-def _get_jwks(force: bool = False) -> list[dict[str, Any]]:
+def _get_jwks(force: bool = False, user_token: str = "") -> list[dict[str, Any]]:
     now = time.time()
     if (
         not force
@@ -94,7 +91,7 @@ def _get_jwks(force: bool = False) -> list[dict[str, Any]]:
         and (now - _JWKS_CACHE["fetched_at"]) < _JWKS_TTL_SECONDS
     ):
         return _JWKS_CACHE["keys"]
-    base = _supabase_base()
+    base = _supabase_base(user_token=user_token)
     if not base:
         return []
     try:
@@ -124,10 +121,16 @@ def _verify_via_supabase(token: str) -> dict[str, Any] | None:
     base = _supabase_base(user_token=token)
     if not base:
         return None
+    # The apikey header is required by Supabase REST; use whichever key is
+    # available (service_role or public anon key). The anon key is safe
+    # to expose (it ships in the frontend JS bundle).
+    api_key = settings.SUPABASE_KEY or settings.SUPABASE_ANON_KEY
+    if not api_key:
+        return None
     try:
         resp = httpx.get(
             f"{base}/auth/v1/user",
-            headers={"Authorization": f"Bearer {token}", "apikey": settings.SUPABASE_KEY},
+            headers={"Authorization": f"Bearer {token}", "apikey": api_key},
             timeout=10,
         )
         if resp.status_code == 200:
@@ -168,7 +171,7 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
     # to Supabase Auth's own /user endpoint for environments where the backend
     # cannot reach the JWKS URL (e.g. Render free-tier network isolation).
     for attempt in range(2):
-        keys = _get_jwks(force=(attempt == 1))
+        keys = _get_jwks(force=(attempt == 1), user_token=token)
         if keys:
             try:
                 return jwt.decode(
@@ -189,7 +192,6 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
         if sub:
             return {"sub": sub, "email": email, "role": "authenticated"}
 
-    raise cred_exc
     raise cred_exc
 
 
