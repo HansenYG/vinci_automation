@@ -182,8 +182,14 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "DATE RULES: Use 2026 for dates like 24/2 or 6月18日 (NOT 2027). Use TODAY below as reference.\n"
         "COURSE RULES: NEVER make up course_id or guess course_name. Copy the EXACT course name "
         "from the user's message verbatim. If no course name is given, omit it.\n"
-        "SCHEDULE RULES: A list of dates means CREATE lessons. Skip dates marked 取消(cancelled) or "
-        "改期(rescheduled without replacement). 改為 X means create on X, skip original.\n\n"
+        "SCHEDULE RULES FOR 改期/取消/改為:\n"
+        "  - 取消 (cancelled): SKIP this date entirely. Do NOT include it.\n"
+        "  - 改期X (rescheduled to X): SKIP the original date, ONLY include the new date X.\n"
+        "    Example: 24/6改期29/6 → skip 24/6, include 29/6 only.\n"
+        "  - 改為X (changed to X): SKIP the original date, ONLY include the new date X.\n"
+        "    Example: 20/7改為21/7 → skip 20/7, include 21/7 only.\n"
+        "  - Dates without any annotation: include them normally.\n"
+        "  - CRITICAL: NEVER add dates that aren't explicitly listed. Only include dates the user mentioned.\n\n"
         "You can RESCHEDULE, CREATE, CREATE_BATCH, and DELETE lessons. "
         "ONLY output ACTION when the user asks to CREATE, RESCHEDULE, or DELETE. "
         "For questions or queries, just reply normally without ACTION.\n"
@@ -205,6 +211,9 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'User: "無人機小組上課日子 24/2, 17/3, 3:10-4:10"\n'
         'ACTION:{"operation":"create_batch","params":{"course_name":"無人機小組","lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n'
         '我會創建2個課堂。開始嗎？\n\n'
+        'User: "ICT Python course 24/6改期29/6, 6/7取消, 13/7, 20/7改為21/7"\n'
+        'ACTION:{"operation":"create_batch","params":{"course_name":"ICT Python AI Advanced Course","lessons":[{"date":"2026-06-29","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-13","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-21","start_time":"14:30","end_time":"17:00"}]}}\n'
+        'I will create 3 lessons. Shall I proceed?\n\n'
         'User: "how many lessons do I have?"\n'
         'You have 15 lessons in the schedule...\n\n'
          f"TODAY is {day_name} {today} (YYYY-MM-DD). "
@@ -247,7 +256,10 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
                 decoder = json.JSONDecoder()
                 parsed, end_idx = decoder.raw_decode(action_match.group(1))
                 clean_reply = reply[:action_match.start()].strip()
-                res["reply"] = clean_reply
+                trailing = action_match.group(1)[end_idx:].strip()
+                if trailing:
+                    clean_reply = (clean_reply + "\n" + trailing).strip()
+                res["reply"] = clean_reply or "OK"
                 res["pendingAction"] = parsed
             except (json.JSONDecodeError, ValueError):
                 pass
