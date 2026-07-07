@@ -1,7 +1,8 @@
 fastapi
 uvicorn[standard]
 pydantic-settings
-supabase
+supabase<3
+postgrest
 python-dotenv
 httpx
 openpyxl

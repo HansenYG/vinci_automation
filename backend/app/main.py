@@ -49,10 +49,10 @@ def create_app() -> FastAPI:
     @app.get("/api/health", include_in_schema=False)
     async def health_check():
         from datetime import datetime
-        from supabase import Client
+        from postgrest import SyncPostgrestClient
         from app.core.database import get_supabase
         
-        db: Client = get_supabase()
+        db: SyncPostgrestClient = get_supabase()
         health_status = {
             "status": "ok",
             "timestamp": datetime.utcnow().isoformat(),

@@ -4,9 +4,9 @@ and one-click preset operations."""
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from supabase import Client
+from postgrest import SyncPostgrestClient
 
-from app.core.database import get_supabase
+from app.api.deps import get_db
 from app.schemas.requests import ChatRequest
 from app.services import chatbot, export, repos
 
@@ -22,26 +22,22 @@ _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @router.get("/presets")
 def presets():
-    """Pre-set prompts for standard operations (one-click buttons in the UI)."""
     return chatbot.PRESETS
 
 
 @router.post("")
-def chat(body: ChatRequest, db: Client = Depends(get_supabase)):
+def chat(body: ChatRequest, db: SyncPostgrestClient = Depends(get_db)):
     history = [m.model_dump() for m in body.history]
     return chatbot.answer(db, body.message, history)
 
 
 @router.post("/execute")
-def execute_action(body: ExecuteRequest, db: Client = Depends(get_supabase)):
-    """Execute a user-confirmed data-modifying operation."""
+def execute_action(body: ExecuteRequest, db: SyncPostgrestClient = Depends(get_db)):
     return chatbot.execute_operation(db, body.operation, body.params)
 
 
 @router.get("/export/{dataset}")
-def export_dataset(dataset: str, db: Client = Depends(get_supabase)):
-    """Download a dataset as .xlsx. dataset ∈ lessons|unassigned|urgent|teachers|courses|schools."""
-    # Export the Airtable-faithful *_full views (lookups/rollups resolved).
+def export_dataset(dataset: str, db: SyncPostgrestClient = Depends(get_db)):
     fetchers = {
         "lessons": lambda: db.table("lessons_full").select("*").execute().data or [],
         "unassigned": lambda: repos.list_unassigned(db, 1000),

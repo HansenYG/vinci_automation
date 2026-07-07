@@ -2,13 +2,13 @@
 a week that are unassigned or cancelled, from the urgent_news view."""
 
 from fastapi import APIRouter, Depends
-from supabase import Client
+from postgrest import SyncPostgrestClient
 
-from app.core.database import get_supabase
+from app.api.deps import get_db
 
 router = APIRouter(prefix="/urgent-news", tags=["urgent-news"])
 
 
 @router.get("")
-def urgent_news(db: Client = Depends(get_supabase)):
+def urgent_news(db: SyncPostgrestClient = Depends(get_db)):
     return db.table("urgent_news").select("*").execute().data or []

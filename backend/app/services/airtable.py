@@ -8,7 +8,9 @@ Requires AIRTABLE_API_KEY + AIRTABLE_BASE_ID in .env.
 from __future__ import annotations
 
 import httpx
-from supabase import Client
+from postgrest import SyncPostgrestClient
+
+Client = SyncPostgrestClient
 
 from app.core.config import settings
 from app.services import repos

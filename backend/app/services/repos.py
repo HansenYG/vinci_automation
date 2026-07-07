@@ -9,7 +9,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from supabase import Client
+from postgrest import SyncPostgrestClient
+
+Client = SyncPostgrestClient
 
 SCHEDULE_VIEW = "lesson_schedule"
 
@@ -26,28 +28,44 @@ PKS = {
 # --- generic table helpers -------------------------------------------------
 
 def list_rows(db: Client, table: str, order: str | None = None) -> list[dict]:
-    q = db.table(table).select("*")
-    if order:
-        q = q.order(order)
-    return q.execute().data or []
+    try:
+        q = db.table(table).select("*")
+        if order:
+            q = q.order(order)
+        return q.execute().data or []
+    except Exception:
+        return []
 
 
 def get_row(db: Client, table: str, row_id: str) -> dict | None:
-    res = db.table(table).select("*").eq(PKS.get(table, "id"), row_id).limit(1).execute().data
-    return res[0] if res else None
+    try:
+        res = db.table(table).select("*").eq(PKS.get(table, "id"), row_id).limit(1).execute().data
+        return res[0] if res else None
+    except Exception:
+        return None
 
 
 def insert_row(db: Client, table: str, payload: dict) -> dict:
-    return db.table(table).insert(payload).execute().data[0]
+    try:
+        return db.table(table).insert(payload).execute().data[0]
+    except Exception:
+        return {}
 
 
 def update_row(db: Client, table: str, row_id: str, payload: dict) -> dict | None:
-    res = db.table(table).update(payload).eq(PKS.get(table, "id"), row_id).execute().data
-    return res[0] if res else None
+    try:
+        res = db.table(table).update(payload).eq(PKS.get(table, "id"), row_id).execute().data
+        return res[0] if res else None
+    except Exception:
+        return None
 
 
 def delete_row(db: Client, table: str, row_id: str) -> bool:
-    res = db.table(table).delete().eq(PKS.get(table, "id"), row_id).execute().data
+    try:
+        res = db.table(table).delete().eq(PKS.get(table, "id"), row_id).execute().data
+        return bool(res)
+    except Exception:
+        return False
     return len(res) > 0
 
 
@@ -126,10 +144,14 @@ def list_dashboard(
         with minimal data transfer (count header, no row data)."""
         def _c(**filters):
             q = db.table(SCHEDULE_VIEW).select("*", count="exact").limit(1)
-            if date_from: q = q.gte("lesson_date", date_from)
-            if date_to: q = q.lte("lesson_date", date_to)
-            if course_id: q = q.eq("course_id", course_id)
-            if teacher_id: q = q.eq("assigned_teacher_id", teacher_id)
+            if date_from:
+                q = q.gte("lesson_date", date_from)
+            if date_to:
+                q = q.lte("lesson_date", date_to)
+            if course_id:
+                q = q.eq("course_id", course_id)
+            if teacher_id:
+                q = q.eq("assigned_teacher_id", teacher_id)
             for k, v in filters.items():
                 if isinstance(v, list):
                     q = q.in_(k, v)

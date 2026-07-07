@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from supabase import Client
+from postgrest import SyncPostgrestClient
 
-from app.core.database import get_supabase
+from app.api.deps import get_db
 from app.schemas.requests import LessonCreate, LessonUpdate
 from app.services import codes, repos
 
@@ -15,9 +15,8 @@ def list_lessons(
     status: str | None = Query(default=None, description="Filter by status (comma-separated)"),
     course_id: str | None = Query(default=None, description="Filter by course_id"),
     teacher_id: str | None = Query(default=None, description="Filter by assigned teacher_id"),
-    db: Client = Depends(get_supabase),
+    db: SyncPostgrestClient = Depends(get_db),
 ):
-    """Schedule feed (joined + colour). Supports status/course/teacher filters."""
     return repos.list_schedule(db, start, end, status=status, course_id=course_id, teacher_id=teacher_id)
 
 
@@ -31,14 +30,8 @@ def list_dashboard(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     show_all: bool = Query(default=False, description="If true, show all lessons (not just action-needed)"),
-    db: Client = Depends(get_supabase),
+    db: SyncPostgrestClient = Depends(get_db),
 ):
-    """
-    Lesson Dashboard feed.
-    Default: action-needed lessons only (unassigned/offersent/hasacceptance), urgency-sorted.
-    Pass show_all=true to see all lessons sorted by date.
-    Returns paginated results with total count.
-    """
     return repos.list_dashboard(
         db,
         status=status,
@@ -53,13 +46,12 @@ def list_dashboard(
 
 
 @router.get("/unassigned")
-def list_unassigned(limit: int = 100, db: Client = Depends(get_supabase)):
-    """Unassigned lessons, soonest first — the Lesson Dashboard source."""
+def list_unassigned(limit: int = 100, db: SyncPostgrestClient = Depends(get_db)):
     return repos.list_unassigned(db, limit)
 
 
 @router.post("", status_code=201)
-def create_lesson(body: LessonCreate, db: Client = Depends(get_supabase)):
+def create_lesson(body: LessonCreate, db: SyncPostgrestClient = Depends(get_db)):
     payload = body.model_dump(mode="json", exclude_none=True)
     if not payload.get("lesson_id"):
         course = repos.get_row(db, "courses", payload["course_id"]) if payload.get("course_id") else None
@@ -72,7 +64,7 @@ def create_lesson(body: LessonCreate, db: Client = Depends(get_supabase)):
 
 
 @router.get("/{lesson_id}")
-def get_lesson(lesson_id: str, db: Client = Depends(get_supabase)):
+def get_lesson(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
     row = repos.get_lesson_view(db, lesson_id)
     if not row:
         raise HTTPException(404, "lesson not found")
@@ -80,7 +72,7 @@ def get_lesson(lesson_id: str, db: Client = Depends(get_supabase)):
 
 
 @router.patch("/{lesson_id}")
-def update_lesson(lesson_id: str, body: LessonUpdate, db: Client = Depends(get_supabase)):
+def update_lesson(lesson_id: str, body: LessonUpdate, db: SyncPostgrestClient = Depends(get_db)):
     updated = repos.update_row(db, "lessons", lesson_id, body.model_dump(mode="json", exclude_none=True))
     if not updated:
         raise HTTPException(404, "lesson not found")
@@ -88,13 +80,12 @@ def update_lesson(lesson_id: str, body: LessonUpdate, db: Client = Depends(get_s
 
 
 @router.delete("/{lesson_id}", status_code=204)
-def delete_lesson(lesson_id: str, db: Client = Depends(get_supabase)):
+def delete_lesson(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
     repos.delete_row(db, "lessons", lesson_id)
 
 
 @router.get("/{lesson_id}/offers")
-def lesson_offers(lesson_id: str, db: Client = Depends(get_supabase)):
-    """The tutor pool for a lesson, each offer enriched with the teacher."""
+def lesson_offers(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
     offers = repos.get_offers(db, lesson_id)
     for o in offers:
         o["teacher"] = repos.get_row(db, "teachers", o["teacher_id"])

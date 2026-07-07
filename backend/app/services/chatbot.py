@@ -21,7 +21,9 @@ import uuid
 from datetime import date, datetime
 
 import httpx
-from supabase import Client
+from postgrest import SyncPostgrestClient
+
+Client = SyncPostgrestClient
 
 from app.core.config import settings
 from app.services import repos, codes
@@ -229,8 +231,15 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
 
 # --- Execute pending actions (after user confirmation) -----------------------
 
-def _resolve_lesson(db: Client, code_or_id: str) -> dict | None:
-    """Resolve a lesson by UUID (id) or human-readable code (lesson_id)."""
+def _resolve_lesson(db: Client, code_or_id: str, *, strict: bool = False) -> dict | None:
+    """Resolve a lesson by UUID (id) or human-readable code (lesson_id).
+
+    Args:
+        db: Supabase client
+        code_or_id: Lesson UUID or lesson_id code
+        strict: If True, only allow exact matches (for destructive operations).
+                If False, fall back to partial ilike match (for read/display).
+    """
     try:
         uuid.UUID(code_or_id)
         rows = db.table("lessons").select("id, lesson_id").eq("id", code_or_id).limit(1).execute().data
@@ -241,6 +250,9 @@ def _resolve_lesson(db: Client, code_or_id: str) -> dict | None:
     rows = db.table("lessons").select("id, lesson_id").eq("lesson_id", code_or_id).limit(1).execute().data
     if rows:
         return rows[0]
+    # For destructive operations, refuse partial matches
+    if strict:
+        return None
     rows = db.table("lessons").select("id, lesson_id").ilike("lesson_id", f"%{code_or_id}%").limit(1).execute().data
     return rows[0] if rows else None
 
@@ -251,9 +263,10 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         lesson_code = params.get("lesson_id")
         if not lesson_code:
             return {"ok": False, "error": "Missing lesson_id"}
-        resolved = _resolve_lesson(db, lesson_code)
+        # Strict match required for destructive operations
+        resolved = _resolve_lesson(db, lesson_code, strict=True)
         if not resolved:
-            return {"ok": False, "error": f"Lesson {lesson_code} not found"}
+            return {"ok": False, "error": f"Lesson {lesson_code} not found (exact match required)"}
         lesson_id = resolved["id"]
         updates = {}
         if params.get("date"): updates["date"] = params["date"]
@@ -286,9 +299,10 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         lesson_code = params.get("lesson_id")
         if not lesson_code:
             return {"ok": False, "error": "Missing lesson_id"}
-        resolved = _resolve_lesson(db, lesson_code)
+        # Strict match required for destructive operations
+        resolved = _resolve_lesson(db, lesson_code, strict=True)
         if not resolved:
-            return {"ok": False, "error": f"Lesson {lesson_code} not found"}
+            return {"ok": False, "error": f"Lesson {lesson_code} not found (exact match required)"}
         repos.delete_row(db, "lessons", resolved["id"])
         return {"ok": True, "message": f"Lesson {lesson_code} deleted."}
 
