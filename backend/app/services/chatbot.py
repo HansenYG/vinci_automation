@@ -101,7 +101,7 @@ def _llm_chat(
     messages: list[dict],
     *,
     temperature: float = 0.4,
-    max_tokens: int = 1200,
+    max_tokens: int = 2000,
     json_mode: bool = False,
 ) -> dict | None:
     """Call the configured LLM provider. Returns parsed JSON body on success, None on error."""
@@ -183,23 +183,27 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "SCHEDULE RULES: A list of dates means CREATE lessons. Skip dates marked 取消(cancelled) or "
         "改期(rescheduled without replacement). 改為 X means create on X, skip original.\n\n"
         "You can RESCHEDULE, CREATE, CREATE_BATCH, and DELETE lessons. "
-        "When asked to modify data, FIRST explain, then output ACTION JSON on its own line:\n"
+        "When asked to modify data, output the ACTION JSON FIRST (on its own line), "
+        "then briefly explain.\n"
         'ACTION:{"operation":"...","params":{...}}\n'
         'create: {"date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
         'create_batch: {"lessons":[{"date":"...","start_time":"...","end_time":"..."},...],"max_tutors":1}\n'
         'reschedule: {"lesson_id":"...","date?":"...","start_time?":"...","end_time?":"..."}\n'
         'delete: {"lesson_id":"..."}\n'
         '"course_name" is optional for create/create_batch. Do NOT output the action yourself — just the ACTION: line.\n\n'
-        "EXAMPLES:\n"
+        "EXAMPLES (ACTION FIRST, then explanation):\n"
         'User: "Move IGCSE Physics lesson July 10 to 16:00"\n'
-        'Assistant: I can reschedule... Shall I proceed?\n'
-        'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
+        'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n'
+        'Assistant: I can reschedule... Shall I proceed?\n\n'
         'User: "Create drone lessons on 24/2 3:10-4:10pm and 17/3 3:10-4:10pm"\n'
-        'ACTION:{"operation":"create_batch","params":{"lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n\n'
+        'ACTION:{"operation":"create_batch","params":{"lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n'
+        'Assistant: I will create 2 drone lessons...\n\n'
         'User: "無人機小組上課日子 24/2, 17/3, 3:10-4:10"\n'
-        'ACTION:{"operation":"create_batch","params":{"course_name":"無人機小組","lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n\n'
+        'ACTION:{"operation":"create_batch","params":{"course_name":"無人機小組","lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n'
+        'Assistant: 我會創建2個課程...\n\n'
         'User: "ICT Python course 24/6改期 29/6取消 6/7 8/7 時間14:30-17:00"\n'
-        'ACTION:{"operation":"create_batch","params":{"course_name":"ICT Python AI Advanced Course","lessons":[{"date":"2026-07-06","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-08","start_time":"14:30","end_time":"17:00"}]}}\n\n'
+        'ACTION:{"operation":"create_batch","params":{"course_name":"ICT Python AI Advanced Course","lessons":[{"date":"2026-07-06","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-08","start_time":"14:30","end_time":"17:00"}]}}\n'
+        'Assistant: 我會創建以下課程...\n\n'
          f"TODAY is {day_name} {today} (YYYY-MM-DD). "
         "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
         "'next week', 'this week', 'next Monday', etc. "
