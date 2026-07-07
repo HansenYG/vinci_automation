@@ -178,42 +178,28 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "  三點 = 3:00, 三點半 = 3:30, 三點九 = 3:45 (Cantonese traditional)\n"
         "  三個字 = 15 minutes (:15), 半個鐘 = 30 minutes\n"
         "Map these to YYYY-MM-DD and HH:MM in the ACTION JSON.\n\n"
-        "IMPORTANT DATE RULES:\n"
-        "  - When the user gives dates like 24/2 or 6月18日 with no year, use the CURRENT year (2026). "
-        "Do NOT skip or advance to next year just because the date has passed — the user is "
-        "describing a schedule that may include past or future dates in 2026.\n"
-        "  - Exception: if the user says 出年/next year/2027 or similar, use next year.\n"
-        "  - TODAY is the reference date below. Use it to compute all relative dates.\n\n"
-        "COURSE RULES:\n"
-        "  - NEVER make up a course_id. If the user mentions a course name, "
-        "include the field \"course_name\":\"<exact course name from user>\" in params. "
-        "If the user does NOT mention any course, omit both course_id and course_name.\n\n"
-        "SCHEDULE INTERPRETATION:\n"
-        "  - When the user provides a list of dates (e.g. a course schedule), "
-        "treat each date as a lesson to CREATE. Apply these rules:\n"
-        "    * 取消(cancelled) or 改期(rescheduled) WITHOUT a replacement date → SKIP that date.\n"
-        "    * 改為/改到 + a specific date (e.g. 改為16/7) → create the lesson on the NEW date, skip the old one.\n"
-        "    * All other dates → CREATE lessons as-is, even if they have notes in parentheses.\n"
-        "  - When you see 改期 (rescheduled) alone with no replacement date, just SKIP it.\n\n"
-        "You can RESCHEDULE, CREATE, and DELETE lessons. "
-        "When the user asks you to modify data, FIRST explain what you will do, "
-        "then output EXACT JSON block(s) on their own lines like this:\n"
-        'ACTION:{"operation":"reschedule|create|create_batch|delete","params":{...}}\n'
-        "The JSON must contain:\n"
-        '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
-        '  - For "create" (single lesson): {"date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
-        '  - For "create_batch" (multiple lessons): {"lessons":[{"date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM"}, ...], "max_tutors":1}\n'
-        '    "course_name" is optional for both create and create_batch.\n'
-        '  - For "delete": {"lesson_id":"..."}\n'
-        "Do NOT execute the action yourself — just output the ACTION: line(s). "
-        "The system will ask the user to confirm before executing.\n\n"
-        "Examples:\n"
-        'User: "Move the IGCSE Physics lesson on July 10 to 16:00"\n'
-        "Assistant: I can reschedule lesson L-2026-010 (IGCSE Physics) from July 10 14:00 to July 10 16:00. Shall I proceed?\n"
-         'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
-         'User: "Create drone lessons on 24/2 3:10-4:10 and 17/3 3:10-4:10"\n'
-         "Assistant: I'll create 2 drone lessons: Feb 24 and Mar 17, both 3:10-4:10pm. Shall I proceed?\n"
-          'ACTION:{"operation":"create_batch","params":{"lessons":[{"date":"2027-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2027-03-17","start_time":"15:10","end_time":"16:10"}]}}\n\n'
+        "DATE RULES: Use 2026 for dates like 24/2 or 6月18日 (NOT 2027). Use TODAY below as reference.\n"
+        "COURSE RULES: NEVER make up course_id. If user mentions a course name, use \"course_name\" in params.\n"
+        "SCHEDULE RULES: A list of dates means CREATE lessons. Skip dates marked 取消(cancelled) or "
+        "改期(rescheduled without replacement). 改為 X means create on X, skip original.\n\n"
+        "You can RESCHEDULE, CREATE, CREATE_BATCH, and DELETE lessons. "
+        "When asked to modify data, FIRST explain, then output ACTION JSON on its own line:\n"
+        'ACTION:{"operation":"...","params":{...}}\n'
+        'create: {"date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
+        'create_batch: {"lessons":[{"date":"...","start_time":"...","end_time":"..."},...],"max_tutors":1}\n'
+        'reschedule: {"lesson_id":"...","date?":"...","start_time?":"...","end_time?":"..."}\n'
+        'delete: {"lesson_id":"..."}\n'
+        '"course_name" is optional for create/create_batch. Do NOT output the action yourself — just the ACTION: line.\n\n'
+        "EXAMPLES:\n"
+        'User: "Move IGCSE Physics lesson July 10 to 16:00"\n'
+        'Assistant: I can reschedule... Shall I proceed?\n'
+        'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
+        'User: "Create drone lessons on 24/2 3:10-4:10pm and 17/3 3:10-4:10pm"\n'
+        'ACTION:{"operation":"create_batch","params":{"lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n\n'
+        'User: "無人機小組上課日子 24/2, 17/3, 3:10-4:10"\n'
+        'ACTION:{"operation":"create_batch","params":{"course_name":"無人機小組","lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n\n'
+        'User: "ICT Python course 24/6改期 29/6取消 6/7 8/7 時間14:30-17:00"\n'
+        'ACTION:{"operation":"create_batch","params":{"course_name":"ICT Python AI Advanced Course","lessons":[{"date":"2026-07-06","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-08","start_time":"14:30","end_time":"17:00"}]}}\n\n'
          f"TODAY is {day_name} {today} (YYYY-MM-DD). "
         "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
         "'next week', 'this week', 'next Monday', etc. "
@@ -252,10 +238,10 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
         if action_block:
             raw = action_block.group(1).strip()
             try:
-                action_data = json.loads(raw)
-                clean_reply = re.sub(r'^ACTION:\s*\{.*', '', reply, flags=re.MULTILINE | re.DOTALL).strip()
+                json.loads(raw)  # validate before using
+                clean_reply = reply[:action_block.start()].strip()
                 res["reply"] = clean_reply
-                res["pendingAction"] = action_data
+                res["pendingAction"] = json.loads(raw)
             except (json.JSONDecodeError, ValueError):
                 pass
         return res
