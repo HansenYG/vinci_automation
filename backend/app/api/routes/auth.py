@@ -278,7 +278,6 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 @router.get("/me")
 async def get_me(
     payload: dict[str, Any] = Depends(get_token_payload),
-    db: Client = Depends(get_supabase),
 ):
     """Return the caller's profile and role.
 
@@ -289,17 +288,7 @@ async def get_me(
     user_id = payload.get("sub")
     email = payload.get("email", "")
 
-    row = (
-        db.table("app_users")
-        .select("user_id, email, role, is_vinci_email, teacher_id, display_name")
-        .eq("user_id", user_id)
-        .limit(1)
-        .execute()
-        .data
-    )
-
-    if not row:
-        # Valid login but not provisioned -> unauthorized (request registration).
+    def _unauthorized() -> AppUser:
         return AppUser(
             user_id=user_id or "",
             email=email,
@@ -309,6 +298,26 @@ async def get_me(
             display_name=(email.split("@")[0] if email else None),
             authorized=False,
         )
+
+    try:
+        db = get_supabase()
+    except RuntimeError:
+        return _unauthorized()
+
+    try:
+        row = (
+            db.table("app_users")
+            .select("user_id, email, role, is_vinci_email, teacher_id, display_name")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+    except Exception:
+        return _unauthorized()
+
+    if not row:
+        return _unauthorized()
 
     u = row[0]
     return AppUser(
