@@ -15,6 +15,7 @@ the original guard logic.
 
 from __future__ import annotations
 
+import secrets
 from collections import Counter
 from datetime import date
 
@@ -47,14 +48,23 @@ INTENT_KEYWORDS = {
 
 
 def _classify(text: str) -> str | None:
+    import re
     low = text.lower().strip()
     scores = Counter()
     for intent, keywords in INTENT_KEYWORDS.items():
         for kw in keywords:
-            if kw in low:
+            # Match whole words or exact phrases using word boundaries
+            pattern = r'\b' + re.escape(kw) + r'\b'
+            if re.search(pattern, low):
                 scores[intent] += 1
     if not scores:
         return None
+    # Deterministic tie-breaking: use stable sort order (accept, cancel, reschedule)
+    intent_order = ["accept", "cancel", "reschedule"]
+    max_score = max(scores.values())
+    for intent in intent_order:
+        if scores.get(intent, 0) == max_score:
+            return intent
     return scores.most_common(1)[0][0]
 
 
@@ -77,7 +87,7 @@ async def wati_webhook(
     # 1. Reject spoofed calls — expect "Bearer <secret>" in Authorization header
     if settings.WATI_WEBHOOK_SECRET:
         expected = f"Bearer {settings.WATI_WEBHOOK_SECRET}"
-        if authorization.strip() != expected:
+        if not secrets.compare_digest(authorization.strip(), expected):
             raise HTTPException(status_code=403, detail="bad token")
 
     try:

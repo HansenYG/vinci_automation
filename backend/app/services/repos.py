@@ -126,10 +126,14 @@ def list_dashboard(
         with minimal data transfer (count header, no row data)."""
         def _c(**filters):
             q = db.table(SCHEDULE_VIEW).select("*", count="exact").limit(1)
-            if date_from: q = q.gte("lesson_date", date_from)
-            if date_to: q = q.lte("lesson_date", date_to)
-            if course_id: q = q.eq("course_id", course_id)
-            if teacher_id: q = q.eq("assigned_teacher_id", teacher_id)
+            if date_from:
+                q = q.gte("lesson_date", date_from)
+            if date_to:
+                q = q.lte("lesson_date", date_to)
+            if course_id:
+                q = q.eq("course_id", course_id)
+            if teacher_id:
+                q = q.eq("assigned_teacher_id", teacher_id)
             for k, v in filters.items():
                 if isinstance(v, list):
                     q = q.in_(k, v)

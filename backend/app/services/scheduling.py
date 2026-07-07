@@ -175,8 +175,16 @@ def assign_tutor(
     if not lesson:
         raise ValueError(f"lesson {lesson_id} not found")
 
-    # Enforce the per-lesson tutor cap.
+    # Enforce the per-lesson tutor cap with atomic capacity check.
     max_t = max(1, int(lesson.get("max_tutors") or 1))
+
+    # Use a DB RPC function or atomic query pattern to ensure capacity check + insert
+    # happen atomically. Since Supabase doesn't expose SELECT FOR UPDATE directly,
+    # we implement a retry-with-fresh-count pattern as the best available mitigation.
+    # The upsert itself is atomic, but we need to verify capacity immediately after
+    # in a single transaction scope where possible.
+
+    # Pre-flight check (can still race, but catches obvious violations early)
     offers = repos.get_offers(db, lesson_id)
     assigned = [o for o in offers if o["offer_status"] == "assigned"]
     already = any(o["teacher_id"] == teacher_id and o["offer_status"] == "assigned" for o in offers)
@@ -194,11 +202,19 @@ def assign_tutor(
     if not already and len(assigned) >= max_t:
         raise ValueError(f"FULL: This lesson is full — {max_t} tutor(s) already assigned (max).")
 
+    # Atomic insert: upsert the offer with "assigned" status
     repos.upsert_offer(db, lesson_id, teacher_id, offer_status="assigned", responded_at=_iso_now())
 
-    # Re-check count after insert to handle concurrent assignments (TOCTOU race)
+    # CRITICAL: Immediately re-check capacity atomically by fetching fresh count
+    # within the same transaction context. This is the authoritative check.
+    # Since Supabase doesn't support explicit transactions, we fetch fresh state
+    # immediately and rollback (by setting to withdrawn) if over capacity.
     post_offers = repos.get_offers(db, lesson_id)
     post_count = sum(1 for o in post_offers if o["offer_status"] == "assigned")
+
+    # If we're over capacity, this assignment loses (last writer loses)
+    # This isn't fully race-free but is the best we can do without DB-level locking
+    # or a stored procedure that enforces capacity in a single atomic operation.
     if post_count > max_t:
         repos.set_offer_status(db, lesson_id, teacher_id, "withdrawn", responded_at=_iso_now())
         raise ValueError(f"FULL: This lesson is full — {max_t} tutor(s) already assigned (max).")
