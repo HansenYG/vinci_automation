@@ -59,25 +59,34 @@ _JWKS_CACHE: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
 _JWKS_TTL_SECONDS = 3600
 
 
-def _jwks_url(token: str = "") -> str:
-    # Prefer the configured SUPABASE_URL.
+JWKS_ALGORITHMS = ["ES256", "RS256", "EdDSA"]
+
+
+def _supabase_base(user_token: str = "") -> str:
     base = settings.SUPABASE_URL.rstrip("/")
     if base:
-        return f"{base}/auth/v1/.well-known/jwks.json"
-    # Fallback: derive from the JWT's issuer claim (so deployments that
-    # don't set SUPABASE_URL can still validate tokens).
-    if token:
+        return base
+    # Fallback 1: derive from the service_role key JWT issuer.
+    try:
+        unverified = jwt.get_unverified_claims(settings.SUPABASE_KEY)
+        iss = unverified.get("iss", "")
+        if iss:
+            return iss.rstrip("/auth/v1").rstrip("/")
+    except (JWTError, Exception):
+        pass
+    # Fallback 2: derive from the user's access token issuer.
+    if user_token:
         try:
-            unverified = jwt.get_unverified_claims(token)
+            unverified = jwt.get_unverified_claims(user_token)
             iss = unverified.get("iss", "")
             if iss:
-                return f"{iss.rstrip('/')}/.well-known/jwks.json"
-        except JWTError:
+                return iss.rstrip("/auth/v1").rstrip("/")
+        except (JWTError, Exception):
             pass
     return ""
 
 
-def _get_jwks(token: str = "", force: bool = False) -> list[dict[str, Any]]:
+def _get_jwks(force: bool = False) -> list[dict[str, Any]]:
     now = time.time()
     if (
         not force
@@ -85,11 +94,11 @@ def _get_jwks(token: str = "", force: bool = False) -> list[dict[str, Any]]:
         and (now - _JWKS_CACHE["fetched_at"]) < _JWKS_TTL_SECONDS
     ):
         return _JWKS_CACHE["keys"]
-    url = _jwks_url(token)
-    if not url:
-        return _JWKS_CACHE["keys"] or []
+    base = _supabase_base()
+    if not base:
+        return []
     try:
-        resp = httpx.get(url, timeout=10)
+        resp = httpx.get(f"{base}/auth/v1/.well-known/jwks.json", timeout=10)
         resp.raise_for_status()
         keys = resp.json().get("keys", [])
         _JWKS_CACHE["keys"] = keys
@@ -104,6 +113,28 @@ def _unverified_alg(token: str) -> str:
         return jwt.get_unverified_header(token).get("alg", "")
     except JWTError:
         return ""
+
+
+def _verify_via_supabase(token: str) -> dict[str, Any] | None:
+    """Verify a user access token by calling the Supabase Auth /user endpoint.
+
+    This fallback works even when local JWKS resolution fails (e.g. Render
+    free-tier cannot make outbound HTTPS calls to the JWKS endpoint).
+    """
+    base = _supabase_base(user_token=token)
+    if not base:
+        return None
+    try:
+        resp = httpx.get(
+            f"{base}/auth/v1/user",
+            headers={"Authorization": f"Bearer {token}", "apikey": settings.SUPABASE_KEY},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+    except httpx.HTTPError:
+        pass
+    return None
 
 
 def _decode_supabase_jwt(token: str) -> dict[str, Any]:
@@ -133,23 +164,34 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
         except JWTError as exc:
             raise cred_exc from exc
 
-    # Asymmetric (ES256/RS256) path via JWKS.
+    # Asymmetric (ES256/RS256) — try local JWKS decode first, then fall back
+    # to Supabase Auth's own /user endpoint for environments where the backend
+    # cannot reach the JWKS URL (e.g. Render free-tier network isolation).
     for attempt in range(2):
-        keys = _get_jwks(token=token, force=(attempt == 1))
-        if not keys:
-            continue
-        try:
-            return jwt.decode(
-                token,
-                {"keys": keys},
-                algorithms=["ES256", "RS256", "EdDSA"],
-                audience="authenticated",
-                options={"verify_aud": True},
-            )
-        except JWTError:
-            # Key may have rotated; retry once with a forced JWKS refresh.
-            if attempt == 1:
-                raise cred_exc
+        keys = _get_jwks(force=(attempt == 1))
+        if keys:
+            try:
+                return jwt.decode(
+                    token,
+                    {"keys": keys},
+                    algorithms=JWKS_ALGORITHMS,
+                    audience="authenticated",
+                    options={"verify_aud": True},
+                )
+            except JWTError:
+                if attempt == 1:
+                    break
+        else:
+            break
+
+    user_data = _verify_via_supabase(token)
+    if user_data:
+        sub = user_data.get("id", "")
+        email = user_data.get("email", "")
+        if sub:
+            return {"sub": sub, "email": email, "role": "authenticated"}
+
+    raise cred_exc
     raise cred_exc
 
 
