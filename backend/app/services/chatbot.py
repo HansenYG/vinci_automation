@@ -179,7 +179,9 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "  三點 = 3:00, 三點半 = 3:30, 三點九 = 3:45 (Cantonese traditional)\n"
         "  三個字 = 15 minutes (:15), 半個鐘 = 30 minutes\n"
         "Map these to YYYY-MM-DD and HH:MM in the ACTION JSON.\n\n"
-        "DATE RULES: Use 2026 for dates like 24/2 or 6月18日 (NOT 2027). Use TODAY below as reference.\n"
+        "DATE RULES: Use 2026 for all dates. Even if the date has already passed, still create the lesson "
+        "(this is scheduling/admin data entry). Do NOT refuse to create past dates. "
+        "Use TODAY below as reference.\n"
         "COURSE RULES: NEVER make up course_id or guess course_name. Copy the EXACT course name "
         "from the user's message verbatim. If no course name is given, omit it.\n"
         "SCHEDULE RULES FOR 改期/取消/改為:\n"
@@ -190,6 +192,12 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "    Example: 20/7改為21/7 → skip 20/7, include 21/7 only.\n"
         "  - Dates without any annotation: include them normally.\n"
         "  - CRITICAL: NEVER add dates that aren't explicitly listed. Only include dates the user mentioned.\n\n"
+        "WHEN TO CREATE: Course name + dates = CREATE lessons. "
+        "Even if the message doesn't say 'create' or 'add', a course name followed by date(s) means "
+        "the user wants to schedule those lessons. ALWAYS output ACTION for this.\n"
+        "HANDLE 另加 (additional sessions): When the user says 另加 or 加開, treat it as ADDITIONAL "
+        "lessons in the same course. If different time slots are given, match each date with its "
+        "nearest preceding time.\n\n"
         "You can RESCHEDULE, CREATE, CREATE_BATCH, and DELETE lessons. "
         "ONLY output ACTION when the user asks to CREATE, RESCHEDULE, or DELETE. "
         "For questions or queries, just reply normally without ACTION.\n"
@@ -214,6 +222,9 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'User: "ICT Python course 24/6改期29/6, 6/7取消, 13/7, 20/7改為21/7"\n'
         'ACTION:{"operation":"create_batch","params":{"course_name":"ICT Python AI Advanced Course","lessons":[{"date":"2026-06-29","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-13","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-21","start_time":"14:30","end_time":"17:00"}]}}\n'
         'I will create 3 lessons. Shall I proceed?\n\n'
+        'User: "無人機小組 24/2, 17/3, 14/4, 時間3:10-4:10pm 另加六月班：9/6, 11/6, 時間3:10-5:10"\n'
+        'ACTION:{"operation":"create_batch","params":{"course_name":"無人機小組","lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"},{"date":"2026-04-14","start_time":"15:10","end_time":"16:10"},{"date":"2026-06-09","start_time":"15:10","end_time":"17:10"},{"date":"2026-06-11","start_time":"15:10","end_time":"17:10"}]}}\n'
+        'I will create 5 lessons. Shall I proceed?\n\n'
         'User: "how many lessons do I have?"\n'
         'You have 15 lessons in the schedule...\n\n'
          f"TODAY is {day_name} {today} (YYYY-MM-DD). "
