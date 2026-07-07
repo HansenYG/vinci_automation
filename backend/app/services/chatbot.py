@@ -101,7 +101,7 @@ def _llm_chat(
     messages: list[dict],
     *,
     temperature: float = 0.4,
-    max_tokens: int = 800,
+    max_tokens: int = 1200,
     json_mode: bool = False,
 ) -> dict | None:
     """Call the configured LLM provider. Returns parsed JSON body on success, None on error."""
