@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import re
 
-from supabase import Client
+from postgrest import SyncPostgrestClient
+
+Client = SyncPostgrestClient
 
 from app.services import repos
 

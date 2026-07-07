@@ -9,7 +9,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from supabase import Client
+from postgrest import SyncPostgrestClient
+
+Client = SyncPostgrestClient
 
 SCHEDULE_VIEW = "lesson_schedule"
 

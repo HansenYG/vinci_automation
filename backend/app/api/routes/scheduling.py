@@ -5,8 +5,9 @@ accepted tutor") and the hourly Render Cron Job (run-due-reminders).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from supabase import Client
+from postgrest import SyncPostgrestClient
 
+from app.api.deps import get_db
 from app.core.config import settings
 from app.core.database import get_supabase
 from app.schemas.requests import AnnounceLessonRequest, AssignRequest
@@ -16,8 +17,7 @@ router = APIRouter(prefix="/scheduling", tags=["scheduling"])
 
 
 @router.post("/lessons/{lesson_id}/blast")
-def blast(lesson_id: str, db: Client = Depends(get_supabase)):
-    """Send the 'lesson needs a tutor' WhatsApp to the pool (or all tutors)."""
+def blast(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
     try:
         return scheduling.blast_lesson(db, lesson_id, force_all=True)
     except ValueError as exc:
@@ -25,19 +25,14 @@ def blast(lesson_id: str, db: Client = Depends(get_supabase)):
 
 
 @router.post("/run-due-reminders")
-def run_due_reminders(token: str = Query(default=""), db: Client = Depends(get_supabase)):
-    """Hourly sweep: re-blast pending tutors past the 24h interval.
-    Protected by the same secret as the webhook (the Cron Job passes ?token=)."""
+def run_due_reminders(token: str = Query(default=""), db: SyncPostgrestClient = Depends(get_supabase)):
     if settings.WATI_WEBHOOK_SECRET and token != settings.WATI_WEBHOOK_SECRET:
         raise HTTPException(403, "bad token")
     return scheduling.run_due_reminders(db)
 
 
 @router.get("/lessons/{lesson_id}/accepted")
-def accepted_pool(lesson_id: str, db: Client = Depends(get_supabase)):
-    """Tutors who accepted — the candidates the admin chooses from.
-    Sorted by reliability_score descending (highest score first, per PRD).
-    """
+def accepted_pool(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
     ids = repos.accepted_teacher_ids(db, lesson_id)
     teachers = [t for t in (repos.get_row(db, "teachers", tid) for tid in ids) if t]
     teachers.sort(key=lambda t: (t.get("reliability_score") or 0), reverse=True)
@@ -45,8 +40,7 @@ def accepted_pool(lesson_id: str, db: Client = Depends(get_supabase)):
 
 
 @router.post("/announce-lesson")
-def announce_lesson(body: AnnounceLessonRequest, db: Client = Depends(get_supabase)):
-    """Create a lesson and WhatsApp the tutors the LLM judges suitable."""
+def announce_lesson(body: AnnounceLessonRequest, db: SyncPostgrestClient = Depends(get_db)):
     return scheduling.announce_lesson(
         db,
         lesson_code=body.lesson_code,
@@ -61,12 +55,7 @@ def announce_lesson(body: AnnounceLessonRequest, db: Client = Depends(get_supaba
 
 
 @router.post("/lessons/{lesson_id}/assign")
-def assign(lesson_id: str, body: AssignRequest, db: Client = Depends(get_supabase)):
-    """Assign an accepted tutor and (by default) send the material link.
-
-    Returns 409 with {error_code: 'CLASH'|'DUPLICATE'|'FULL', detail: str} for
-    assignment constraint violations so the frontend can show targeted UI.
-    """
+def assign(lesson_id: str, body: AssignRequest, db: SyncPostgrestClient = Depends(get_db)):
     from fastapi.responses import JSONResponse
     try:
         return scheduling.assign_tutor(
@@ -86,8 +75,7 @@ def assign(lesson_id: str, body: AssignRequest, db: Client = Depends(get_supabas
 
 
 @router.post("/lessons/{lesson_id}/send-confirmation")
-def resend_confirmation(lesson_id: str, db: Client = Depends(get_supabase)):
-    """Re-send the confirmation + material link to the already-assigned tutor."""
+def resend_confirmation(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
     lesson = repos.get_lesson_view(db, lesson_id)
     if not lesson:
         raise HTTPException(404, "lesson not found")

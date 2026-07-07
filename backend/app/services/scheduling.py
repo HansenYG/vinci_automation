@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from supabase import Client
+from postgrest import SyncPostgrestClient
+
+Client = SyncPostgrestClient
 
 from app.core.config import settings
 from app.services import codes, repos, urgency, wati

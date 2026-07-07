@@ -20,7 +20,7 @@ from collections import Counter
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
-from supabase import Client
+from postgrest import SyncPostgrestClient
 
 from app.core.config import settings
 from app.core.database import get_supabase
@@ -82,7 +82,7 @@ def _soonest(views: list[dict]) -> dict | None:
 async def wati_webhook(
     request: Request,
     authorization: str = Header(default=""),
-    db: Client = Depends(get_supabase),
+    db: SyncPostgrestClient = Depends(get_supabase),
 ):
     # 1. Reject spoofed calls — expect "Bearer <secret>" in Authorization header
     if settings.WATI_WEBHOOK_SECRET:

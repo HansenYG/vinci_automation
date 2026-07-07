@@ -21,7 +21,9 @@ import uuid
 from datetime import date, datetime
 
 import httpx
-from supabase import Client
+from postgrest import SyncPostgrestClient
+
+Client = SyncPostgrestClient
 
 from app.core.config import settings
 from app.services import repos, codes
