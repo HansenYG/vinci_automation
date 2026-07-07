@@ -9,13 +9,13 @@ from app.core.config import settings
 
 
 def _build_headers(key: str, user_token: str = "") -> dict[str, str]:
-    headers = {}
+    headers: dict[str, str] = {}
     if key.startswith("sb_"):
         headers["Authorization"] = f"Bearer {key}"
         headers["apikey"] = settings.SUPABASE_ANON_KEY
     else:
         headers["apikey"] = key
-    if user_token and not settings.SUPABASE_KEY:
+    if user_token:
         headers["Authorization"] = f"Bearer {user_token}"
     return headers
 
