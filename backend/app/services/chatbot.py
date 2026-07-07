@@ -198,8 +198,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "HANDLE 另加 (additional sessions): When the user says 另加 or 加開, treat it as ADDITIONAL "
         "lessons in the same course. If different time slots are given, match each date with its "
         "nearest preceding time.\n\n"
-        "You can RESCHEDULE, CREATE, CREATE_BATCH, and DELETE lessons. "
-        "ONLY output ACTION when the user asks to CREATE, RESCHEDULE, or DELETE. "
+        "You can RESCHEDULE, CREATE, CREATE_BATCH, ASSIGN, and DELETE lessons. "
+        "ONLY output ACTION when the user asks to CREATE, RESCHEDULE, ASSIGN, or DELETE. "
         "For questions or queries, just reply normally without ACTION.\n"
         "When you do output ACTION, put it FIRST, "
         "then a BRIEF one-sentence explanation.\n"
@@ -207,6 +207,7 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'create: {"date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
         'create_batch: {"lessons":[{"date":"...","start_time":"...","end_time":"..."},...],"max_tutors":1}\n'
         'reschedule: {"lesson_id":"...","date?":"...","start_time?":"...","end_time?":"..."}\n'
+        'assign: {"lesson_id":"...","teacher_id":"..."} or {"lesson_id":"...","teacher_name":"..."}\n'
         'delete: {"lesson_id":"..."}\n'
         'Use "course_name" (not course_id) for create/create_batch.\n\n'
         "EXAMPLES (ACTION FIRST, then explanation):\n"
@@ -225,6 +226,9 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'User: "Drone Course 10/3, 17/3, 24/3, 時間2-4pm 另加四月班：7/4, 14/4, 時間2:30-4:30"\n'
         'ACTION:{"operation":"create_batch","params":{"course_name":"Drone Course","lessons":[{"date":"2026-03-10","start_time":"14:00","end_time":"16:00"},{"date":"2026-03-17","start_time":"14:00","end_time":"16:00"},{"date":"2026-03-24","start_time":"14:00","end_time":"16:00"},{"date":"2026-04-07","start_time":"14:30","end_time":"16:30"},{"date":"2026-04-14","start_time":"14:30","end_time":"16:30"}]}}\n'
         'I will create 5 lessons. Shall I proceed?\n\n'
+        'User: "Assign Alice Chan to ICT Python lesson 29/6"\n'
+        'ACTION:{"operation":"assign","params":{"lesson_id":"L-2026-029","teacher_name":"Alice Chan"}}\n'
+        'I will assign Alice Chan to that lesson. Shall I proceed?\n\n'
         'User: "how many lessons do I have?"\n'
         'You have 15 lessons in the schedule...\n\n'
          f"TODAY is {day_name} {today} (YYYY-MM-DD). "
@@ -368,6 +372,30 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         if len(created) == 1:
             return {"ok": True, "message": f"Lesson {created[0]} created."}
         return {"ok": True, "message": f"{len(created)} lessons created: {', '.join(created)}."}
+
+    if operation == "assign":
+        lesson_code = params.get("lesson_id")
+        teacher_id = params.get("teacher_id")
+        teacher_name = params.get("teacher_name")
+        if not lesson_code:
+            return {"ok": False, "error": "Missing lesson_id"}
+        if not teacher_id and not teacher_name:
+            return {"ok": False, "error": "Missing teacher_id or teacher_name"}
+        if teacher_name and not teacher_id:
+            rows = db.table("teachers").select("teacher_id").ilike("teacher_name", teacher_name.strip()).limit(1).execute().data
+            if rows:
+                teacher_id = rows[0]["teacher_id"]
+            else:
+                return {"ok": False, "error": f"Teacher '{teacher_name}' not found"}
+        resolved = _resolve_lesson(db, lesson_code, strict=True)
+        if not resolved:
+            return {"ok": False, "error": f"Lesson {lesson_code} not found (exact match required)"}
+        from app.services.scheduling import assign_tutor
+        try:
+            assign_tutor(db, resolved["id"], teacher_id, send_files=False)
+            return {"ok": True, "message": f"Teacher assigned to {lesson_code}."}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
 
     if operation == "delete":
         lesson_code = params.get("lesson_id")
