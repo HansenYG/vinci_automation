@@ -167,7 +167,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
 
     system = (
         "You are the Vinci Automation admin assistant for a tutoring company. "
-        "Be concise and helpful. Base every fact ONLY on the data snapshot below — "
+        "Be concise and direct. Reply in the same language as the user. "
+        "Base every fact ONLY on the data snapshot below — "
         "if it isn't there, say you don't have that detail rather than guessing.\n\n"
         "You understand Cantonese (廣東話), Mandarin (普通話), and English. "
         "When the user speaks Cantonese or Chinese, reply in the same language. "
@@ -179,31 +180,33 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "  三個字 = 15 minutes (:15), 半個鐘 = 30 minutes\n"
         "Map these to YYYY-MM-DD and HH:MM in the ACTION JSON.\n\n"
         "DATE RULES: Use 2026 for dates like 24/2 or 6月18日 (NOT 2027). Use TODAY below as reference.\n"
-        "COURSE RULES: NEVER make up course_id. If user mentions a course name, use \"course_name\" in params.\n"
+        "COURSE RULES: NEVER make up course_id or guess course_name. Copy the EXACT course name "
+        "from the user's message verbatim. If no course name is given, omit it.\n"
         "SCHEDULE RULES: A list of dates means CREATE lessons. Skip dates marked 取消(cancelled) or "
         "改期(rescheduled without replacement). 改為 X means create on X, skip original.\n\n"
         "You can RESCHEDULE, CREATE, CREATE_BATCH, and DELETE lessons. "
-        "When asked to modify data, output the ACTION: line FIRST, "
+        "ONLY output ACTION when the user asks to CREATE, RESCHEDULE, or DELETE. "
+        "For questions or queries, just reply normally without ACTION.\n"
+        "When you do output ACTION, put it FIRST, "
         "then a BRIEF one-sentence explanation.\n"
         'ACTION:{"operation":"...","params":{...}}\n'
         'create: {"date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
         'create_batch: {"lessons":[{"date":"...","start_time":"...","end_time":"..."},...],"max_tutors":1}\n'
         'reschedule: {"lesson_id":"...","date?":"...","start_time?":"...","end_time?":"..."}\n'
         'delete: {"lesson_id":"..."}\n'
-        '"course_name" is optional for create/create_batch. Do NOT output the action yourself — just the ACTION: line.\n\n'
+        'Use "course_name" (not course_id) for create/create_batch.\n\n'
         "EXAMPLES (ACTION FIRST, then explanation):\n"
         'User: "Move IGCSE Physics lesson July 10 to 16:00"\n'
         'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n'
-        'Assistant: I can reschedule... Shall I proceed?\n\n'
+        'I can reschedule that lesson. Shall I proceed?\n\n'
         'User: "Create drone lessons on 24/2 3:10-4:10pm and 17/3 3:10-4:10pm"\n'
         'ACTION:{"operation":"create_batch","params":{"lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n'
-        'Assistant: I will create 2 drone lessons...\n\n'
+        'I will create 2 drone lessons. Shall I proceed?\n\n'
         'User: "無人機小組上課日子 24/2, 17/3, 3:10-4:10"\n'
         'ACTION:{"operation":"create_batch","params":{"course_name":"無人機小組","lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"}]}}\n'
-        'Assistant: 我會創建2個課程...\n\n'
-        'User: "ICT Python course 24/6改期 29/6取消 6/7 8/7 時間14:30-17:00"\n'
-        'ACTION:{"operation":"create_batch","params":{"course_name":"ICT Python AI Advanced Course","lessons":[{"date":"2026-07-06","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-08","start_time":"14:30","end_time":"17:00"}]}}\n'
-        'Assistant: 我會創建以下課程...\n\n'
+        '我會創建2個課堂。開始嗎？\n\n'
+        'User: "how many lessons do I have?"\n'
+        'You have 15 lessons in the schedule...\n\n'
          f"TODAY is {day_name} {today} (YYYY-MM-DD). "
         "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
         "'next week', 'this week', 'next Monday', etc. "
@@ -238,14 +241,14 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
     if res["source"] != "fallback":
         # Check for ACTION: JSON block in the reply
         reply = res.get("reply", "")
-        action_block = re.search(r'^ACTION:\s*(\{.*)', reply, re.MULTILINE | re.DOTALL)
-        if action_block:
-            raw = action_block.group(1).strip()
+        action_match = re.search(r'^ACTION:\s*(\{.*)', reply, re.MULTILINE | re.DOTALL)
+        if action_match:
             try:
-                json.loads(raw)  # validate before using
-                clean_reply = reply[:action_block.start()].strip()
+                decoder = json.JSONDecoder()
+                parsed, end_idx = decoder.raw_decode(action_match.group(1))
+                clean_reply = reply[:action_match.start()].strip()
                 res["reply"] = clean_reply
-                res["pendingAction"] = json.loads(raw)
+                res["pendingAction"] = parsed
             except (json.JSONDecodeError, ValueError):
                 pass
         return res
