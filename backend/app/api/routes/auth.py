@@ -181,8 +181,6 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
             except JWTError:
                 if attempt == 1:
                     break
-        else:
-            break
 
     user_data = _verify_via_supabase(token)
     if user_data:
