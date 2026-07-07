@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # --- Supabase (set in .env) -------------------------------------------
     # Backend uses the service_role key, which bypasses RLS. Keep it secret.
     # SUPABASE_URL must be set in .env (no default — fail fast if missing).
-    SUPABASE_URL: str = ""
+    SUPABASE_URL: str = "https://zigzgzurmuplgcqsnnlv.supabase.co"
     SUPABASE_KEY: str = ""
     # Public anon key used by Supabase Auth API calls (safe to embed).
     SUPABASE_ANON_KEY: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppZ3pnenVybXVwbGdjcXNubmx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzUyMjIsImV4cCI6MjA5ODM1MTIyMn0.cGkHBdME80jDYDGRV_IBcGVp0k7IyCzxWSZOLqsZcIQ"
