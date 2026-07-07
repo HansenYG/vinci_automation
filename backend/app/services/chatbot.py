@@ -183,8 +183,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "SCHEDULE RULES: A list of dates means CREATE lessons. Skip dates marked 取消(cancelled) or "
         "改期(rescheduled without replacement). 改為 X means create on X, skip original.\n\n"
         "You can RESCHEDULE, CREATE, CREATE_BATCH, and DELETE lessons. "
-        "When asked to modify data, output the ACTION JSON FIRST (on its own line), "
-        "then briefly explain.\n"
+        "When asked to modify data, output the ACTION: line FIRST, "
+        "then a BRIEF one-sentence explanation.\n"
         'ACTION:{"operation":"...","params":{...}}\n'
         'create: {"date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
         'create_batch: {"lessons":[{"date":"...","start_time":"...","end_time":"..."},...],"max_tutors":1}\n'
