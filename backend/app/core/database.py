@@ -15,7 +15,7 @@ def _build_headers(key: str, user_token: str = "") -> dict[str, str]:
         headers["apikey"] = settings.SUPABASE_ANON_KEY
     else:
         headers["apikey"] = key
-    if user_token:
+    if user_token and not settings.SUPABASE_KEY:
         headers["Authorization"] = f"Bearer {user_token}"
     return headers
 

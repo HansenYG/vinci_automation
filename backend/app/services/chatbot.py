@@ -174,7 +174,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'ACTION:{"operation":"reschedule|create|delete","params":{...}}\n'
         "The JSON must contain:\n"
         '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
-        '  - For "create": {"course_id":"...", "date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
+        '  - For "create": {"date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
+        '    "course_id" is OPTIONAL for create — ask the user if they want to assign a course, but make clear it is not required.\n'
         '  - For "delete": {"lesson_id":"..."}\n'
         "Do NOT execute the action yourself — just output the ACTION: line. "
         "The system will ask the user to confirm before executing.\n\n"
@@ -278,20 +279,26 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         return {"ok": True, "message": f"Lesson {lesson_code} updated."}
 
     if operation == "create":
-        course_id = params.get("course_id")
         date_val = params.get("date")
-        if not course_id or not date_val:
-            return {"ok": False, "error": "Missing course_id or date"}
-        lesson_code = codes.next_lesson_code(db, date=date_val, start_time=params.get("start_time"), course_name=params.get("course_name"))
+        if not date_val:
+            return {"ok": False, "error": "Missing date"}
+        start_time = params.get("start_time")
+        end_time = params.get("end_time")
+        course_id = params.get("course_id")
+        course_name = params.get("course_name")
+        lesson_code = codes.next_lesson_code(db, date=date_val, start_time=start_time, course_name=course_name)
         payload = {
             "date": date_val,
             "lesson_id": lesson_code,
-            "course_id": course_id,
             "status": "Unassigned",
             "max_tutors": params.get("max_tutors", 1),
         }
-        if params.get("start_time"): payload["start_time"] = params["start_time"]
-        if params.get("end_time"): payload["end_time"] = params["end_time"]
+        if course_id:
+            payload["course_id"] = course_id
+        if start_time:
+            payload["start_time"] = start_time
+        if end_time:
+            payload["end_time"] = end_time
         repos.insert_row(db, "lessons", payload)
         return {"ok": True, "message": f"Lesson {lesson_code} created."}
 
