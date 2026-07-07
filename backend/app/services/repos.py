@@ -46,13 +46,17 @@ def get_row(db: Client, table: str, row_id: str) -> dict | None:
 
 
 def insert_row(db: Client, table: str, payload: dict) -> dict:
+    import logging
+    logger = logging.getLogger(__name__)
     try:
         res = db.table(table).insert(payload).execute()
         if res.data:
             return res.data[0]
+        logger.warning("insert_row %s — empty data for payload=%s", table, payload)
         return {}
-    except Exception:
-        return {}
+    except Exception as exc:
+        logger.error("insert_row %s — %s: %s", table, type(exc).__name__, exc)
+        raise
 
 
 def update_row(db: Client, table: str, row_id: str, payload: dict) -> dict | None:
