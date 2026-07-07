@@ -230,9 +230,6 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'User: "Assign Alice Chan to ICT Python lesson 29/6"\n'
         'ACTION:{"operation":"assign","params":{"lesson_id":"L-2026-029","teacher_name":"Alice Chan"}}\n'
         'I will assign Alice Chan to that lesson. Shall I proceed?\n\n'
-        'User: "安排 David Park 去教 LES-20260714-1000-MTP-2"\n'
-        'ACTION:{"operation":"assign","params":{"lesson_id":"LES-20260714-1000-MTP-2","teacher_name":"David Park"}}\n'
-        '我會安排 David Park 教這個課堂。開始嗎？\n\n'
         'User: "how many lessons do I have?"\n'
         'You have 15 lessons in the schedule...\n\n'
          f"TODAY is {day_name} {today} (YYYY-MM-DD). "
