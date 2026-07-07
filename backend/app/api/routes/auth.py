@@ -59,12 +59,25 @@ _JWKS_CACHE: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
 _JWKS_TTL_SECONDS = 3600
 
 
-def _jwks_url() -> str:
+def _jwks_url(token: str = "") -> str:
+    # Prefer the configured SUPABASE_URL.
     base = settings.SUPABASE_URL.rstrip("/")
-    return f"{base}/auth/v1/.well-known/jwks.json"
+    if base:
+        return f"{base}/auth/v1/.well-known/jwks.json"
+    # Fallback: derive from the JWT's issuer claim (so deployments that
+    # don't set SUPABASE_URL can still validate tokens).
+    if token:
+        try:
+            unverified = jwt.get_unverified_claims(token)
+            iss = unverified.get("iss", "")
+            if iss:
+                return f"{iss.rstrip('/')}/.well-known/jwks.json"
+        except JWTError:
+            pass
+    return ""
 
 
-def _get_jwks(force: bool = False) -> list[dict[str, Any]]:
+def _get_jwks(token: str = "", force: bool = False) -> list[dict[str, Any]]:
     now = time.time()
     if (
         not force
@@ -72,15 +85,17 @@ def _get_jwks(force: bool = False) -> list[dict[str, Any]]:
         and (now - _JWKS_CACHE["fetched_at"]) < _JWKS_TTL_SECONDS
     ):
         return _JWKS_CACHE["keys"]
+    url = _jwks_url(token)
+    if not url:
+        return _JWKS_CACHE["keys"] or []
     try:
-        resp = httpx.get(_jwks_url(), timeout=10)
+        resp = httpx.get(url, timeout=10)
         resp.raise_for_status()
         keys = resp.json().get("keys", [])
         _JWKS_CACHE["keys"] = keys
         _JWKS_CACHE["fetched_at"] = now
         return keys
     except Exception:
-        # Return whatever we have cached (possibly None) on network failure.
         return _JWKS_CACHE["keys"] or []
 
 
@@ -120,7 +135,7 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
 
     # Asymmetric (ES256/RS256) path via JWKS.
     for attempt in range(2):
-        keys = _get_jwks(force=(attempt == 1))
+        keys = _get_jwks(token=token, force=(attempt == 1))
         if not keys:
             continue
         try:
