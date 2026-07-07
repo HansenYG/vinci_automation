@@ -178,21 +178,33 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "  三點 = 3:00, 三點半 = 3:30, 三點九 = 3:45 (Cantonese traditional)\n"
         "  三個字 = 15 minutes (:15), 半個鐘 = 30 minutes\n"
         "Map these to YYYY-MM-DD and HH:MM in the ACTION JSON.\n\n"
+        "IMPORTANT DATE RULES:\n"
+        "  - When the user gives dates like 24/2 with no year, check TODAY to decide the year. "
+        "If that month+day has already passed this year, use NEXT year.\n"
+        "  - TODAY is the reference date below. Use it to compute all relative dates.\n\n"
+        "COURSE RULES:\n"
+        "  - NEVER make up a course_id. If the user mentions a course name, "
+        "include the field \"course_name\":\"<exact course name from user>\" in params. "
+        "If the user does NOT mention any course, omit both course_id and course_name.\n\n"
         "You can RESCHEDULE, CREATE, and DELETE lessons. "
         "When the user asks you to modify data, FIRST explain what you will do, "
-        "then output an EXACT JSON block on its own line like this:\n"
-        'ACTION:{"operation":"reschedule|create|delete","params":{...}}\n'
+        "then output EXACT JSON block(s) on their own lines like this:\n"
+        'ACTION:{"operation":"reschedule|create|create_batch|delete","params":{...}}\n'
         "The JSON must contain:\n"
         '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
-        '  - For "create": {"date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
-        '    "course_id" is OPTIONAL for create — ask the user if they want to assign a course, but make clear it is not required.\n'
+        '  - For "create" (single lesson): {"date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
+        '  - For "create_batch" (multiple lessons): {"lessons":[{"date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM"}, ...], "max_tutors":1}\n'
+        '    "course_name" is optional for both create and create_batch.\n'
         '  - For "delete": {"lesson_id":"..."}\n'
-        "Do NOT execute the action yourself — just output the ACTION: line. "
+        "Do NOT execute the action yourself — just output the ACTION: line(s). "
         "The system will ask the user to confirm before executing.\n\n"
-        "Example:\n"
+        "Examples:\n"
         'User: "Move the IGCSE Physics lesson on July 10 to 16:00"\n'
         "Assistant: I can reschedule lesson L-2026-010 (IGCSE Physics) from July 10 14:00 to July 10 16:00. Shall I proceed?\n"
          'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
+         'User: "Create drone lessons on 24/2 3:10-4:10 and 17/3 3:10-4:10"\n'
+         "Assistant: I'll create 2 drone lessons: Feb 24 and Mar 17, both 3:10-4:10pm. Shall I proceed?\n"
+          'ACTION:{"operation":"create_batch","params":{"lessons":[{"date":"2027-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2027-03-17","start_time":"15:10","end_time":"16:10"}]}}\n\n'
          f"TODAY is {day_name} {today} (YYYY-MM-DD). "
         "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
         "'next week', 'this week', 'next Monday', etc. "
@@ -227,12 +239,12 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
     if res["source"] != "fallback":
         # Check for ACTION: JSON block in the reply
         reply = res.get("reply", "")
-        match = re.search(r'^ACTION:\s*(\{.*\})\s*$', reply, re.MULTILINE)
-        if match:
+        action_block = re.search(r'^ACTION:\s*(\{.*)', reply, re.MULTILINE | re.DOTALL)
+        if action_block:
+            raw = action_block.group(1).strip()
             try:
-                action_data = json.loads(match.group(1))
-                # Strip the ACTION line from the displayed reply
-                clean_reply = re.sub(r'^ACTION:\s*\{.*\}\s*', '', reply, flags=re.MULTILINE).strip()
+                action_data = json.loads(raw)
+                clean_reply = re.sub(r'^ACTION:\s*\{.*', '', reply, flags=re.MULTILINE | re.DOTALL).strip()
                 res["reply"] = clean_reply
                 res["pendingAction"] = action_data
             except (json.JSONDecodeError, ValueError):
@@ -289,29 +301,46 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         repos.update_row(db, "lessons", lesson_id, updates)
         return {"ok": True, "message": f"Lesson {lesson_code} updated."}
 
-    if operation == "create":
-        date_val = params.get("date")
-        if not date_val:
-            return {"ok": False, "error": "Missing date"}
-        start_time = params.get("start_time")
-        end_time = params.get("end_time")
-        course_id = params.get("course_id")
+    if operation in ("create", "create_batch"):
+        lessons = params.get("lessons", [])
+        if not lessons:
+            single = {k: params.get(k) for k in ("date", "start_time", "end_time") if params.get(k)}
+            if single.get("date"):
+                lessons = [dict(single)]
+        if not lessons:
+            return {"ok": False, "error": "Missing date(s)"}
+
         course_name = params.get("course_name")
-        lesson_code = codes.next_lesson_code(db, date=date_val, start_time=start_time, course_name=course_name)
-        payload = {
-            "date": date_val,
-            "lesson_id": lesson_code,
-            "status": "Unassigned",
-            "max_tutors": params.get("max_tutors", 1),
-        }
-        if course_id:
-            payload["course_id"] = course_id
-        if start_time:
-            payload["start_time"] = start_time
-        if end_time:
-            payload["end_time"] = end_time
-        repos.insert_row(db, "lessons", payload)
-        return {"ok": True, "message": f"Lesson {lesson_code} created."}
+        course_id = params.get("course_id")
+        if course_name and not course_id:
+            rows = db.table("courses").select("course_id").eq("course_name", course_name).limit(1).execute().data
+            if rows:
+                course_id = rows[0]["course_id"]
+
+        created = []
+        for les in lessons:
+            les_date = les.get("date")
+            les_start = les.get("start_time")
+            les_end = les.get("end_time")
+            les_code = codes.next_lesson_code(db, date=les_date, start_time=les_start, course_name=course_name)
+            payload = {
+                "date": les_date,
+                "lesson_id": les_code,
+                "status": "Unassigned",
+                "max_tutors": params.get("max_tutors", 1),
+            }
+            if course_id:
+                payload["course_id"] = course_id
+            if les_start:
+                payload["start_time"] = les_start
+            if les_end:
+                payload["end_time"] = les_end
+            repos.insert_row(db, "lessons", payload)
+            created.append(les_code)
+
+        if len(created) == 1:
+            return {"ok": True, "message": f"Lesson {created[0]} created."}
+        return {"ok": True, "message": f"{len(created)} lessons created: {', '.join(created)}."}
 
     if operation == "delete":
         lesson_code = params.get("lesson_id")
