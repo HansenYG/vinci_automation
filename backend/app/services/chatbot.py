@@ -67,26 +67,27 @@ def _fmt(r: dict) -> dict:
 def _deterministic_answer(db: Client, message: str) -> dict | None:
     m = message.lower()
 
-    if "unassigned" in m:
+    if "unassigned" in m or "未分配" in m or "未安排" in m:
         rows = repos.list_unassigned(db, limit=50)
         lines = [f"- {r['lesson_code']} · {r.get('course_name') or '?'} · {r['lesson_date']} ({r['color']})" for r in rows]
         reply = f"{len(rows)} unassigned lesson(s):\n" + "\n".join(lines) if rows else "No unassigned lessons. 🎉"
         return {"reply": reply, "source": "db", "data": rows}
 
-    if "urgent" in m or "within a week" in m:
+    if "urgent" in m or "within a week" in m or "緊急" in m or "急" in m:
         rows = db.table("urgent_news").select("*").execute().data or []
         lines = [f"- {r['lesson_code']} · {r.get('course_name') or '?'} · {r['lesson_date']} · {r['reason']}" for r in rows]
         reply = f"{len(rows)} urgent item(s):\n" + "\n".join(lines) if rows else "Nothing urgent within a week."
         return {"reply": reply, "source": "db", "data": rows}
 
-    if "today" in m:
+    if "today" in m or "今日" in m:
         today = date.today().isoformat()
         rows = repos.list_schedule(db, today, today)
         lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
-        reply = f"{len(rows)} lesson(s) today:\n" + "\n".join(lines) if rows else "No lessons scheduled today."
+        label = "今日" if "今日" in m else "today"
+        reply = f"{len(rows)} lesson(s) {label}:\n" + "\n".join(lines) if rows else f"No lessons scheduled {label}."
         return {"reply": reply, "source": "db", "data": rows}
 
-    if any(w in m for w in ("how many", "count", "summary", "total")):
+    if any(w in m for w in ("how many", "count", "summary", "total", "總數", "統計", "幾多")):
         c = _counts(db)
         reply = f"Schools: {c['schools']}, Teachers: {c['teachers']}, Courses: {c['courses']}, Lessons: {c['lessons']}."
         return {"reply": reply, "source": "db", "data": c}
@@ -168,6 +169,15 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "You are the Vinci Automation admin assistant for a tutoring company. "
         "Be concise and helpful. Base every fact ONLY on the data snapshot below — "
         "if it isn't there, say you don't have that detail rather than guessing.\n\n"
+        "You understand Cantonese (廣東話), Mandarin (普通話), and English. "
+        "When the user speaks Cantonese or Chinese, reply in the same language. "
+        "Parse Cantonese date/time terms using TODAY as reference:\n"
+        "  今日/聽日/後日 = today/tomorrow/day-after-tomorrow\n"
+        "  今個星期一/下個星期一 = this Monday / next Monday\n"
+        "  上晝(am)/下晝(pm)/朝早(morning)/晏晝(afternoon)/夜晚(evening)\n"
+        "  三點 = 3:00, 三點半 = 3:30, 三點九 = 3:45 (Cantonese traditional)\n"
+        "  三個字 = 15 minutes (:15), 半個鐘 = 30 minutes\n"
+        "Map these to YYYY-MM-DD and HH:MM in the ACTION JSON.\n\n"
         "You can RESCHEDULE, CREATE, and DELETE lessons. "
         "When the user asks you to modify data, FIRST explain what you will do, "
         "then output an EXACT JSON block on its own line like this:\n"
@@ -203,7 +213,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "reply": (
             "I can't reach the language model right now, but I can still answer "
             "operational questions like 'show unassigned lessons', 'urgent within a week', "
-            "'today's schedule', or 'database summary'. To add data, use the input forms."
+            "'today's schedule', or 'database summary' (also in 廣東話: 未分配/緊急/今日/總數). "
+            "To add data, use the input forms."
         ),
         "source": "fallback",
     }
