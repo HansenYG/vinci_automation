@@ -1,10 +1,3 @@
-"""Supabase / PostgREST client for the backend.
-
-Uses ``postgrest.SyncPostgrestClient`` directly instead of the
-``supabase`` package because the supabase-py client has compatibility
-issues with newer API key formats on Render.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -15,25 +8,31 @@ from postgrest import SyncPostgrestClient
 from app.core.config import settings
 
 
+def _build_headers(key: str, user_token: str = "") -> dict[str, str]:
+    headers = {}
+    if key.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {key}"
+        headers["apikey"] = settings.SUPABASE_ANON_KEY
+    else:
+        headers["apikey"] = key
+    if user_token:
+        headers["Authorization"] = f"Bearer {user_token}"
+    return headers
+
+
 _SUPABASE_CREDENTIALS_HASH: str = ""
 
 
 @lru_cache
-def _build_client() -> SyncPostgrestClient:
+def _build_client(user_token: str = "") -> SyncPostgrestClient:
     key = settings.SUPABASE_KEY or settings.SUPABASE_ANON_KEY
     return SyncPostgrestClient(
         f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1",
-        headers={"apikey": key},
+        headers=_build_headers(key, user_token=user_token),
     )
 
 
 def get_supabase() -> SyncPostgrestClient:
-    """Return a cached PostgREST client.
-
-    To bypass Row Level Security, set ``SUPABASE_KEY`` to a Supabase
-    ``service_role`` (or ``sb_secret_...``) key in the environment.
-    Without it, the public ``anon`` key is used (respects RLS).
-    """
     key = settings.SUPABASE_KEY or settings.SUPABASE_ANON_KEY
     if not settings.SUPABASE_URL or not key:
         raise RuntimeError(

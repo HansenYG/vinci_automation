@@ -5,6 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from postgrest import SyncPostgrestClient
 
 from app.core.config import settings
+from app.core.database import _build_headers
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -29,8 +30,5 @@ def get_db(token: str = Depends(get_raw_token)) -> SyncPostgrestClient:
         )
     return SyncPostgrestClient(
         f"{settings.SUPABASE_URL.rstrip('/')}/rest/v1",
-        headers={
-            "apikey": key,
-            "Authorization": f"Bearer {token}",
-        },
+        headers=_build_headers(key, user_token=token),
     )
