@@ -15,7 +15,7 @@ def rows_to_xlsx(rows: list[dict[str, Any]], sheet_name: str = "Export") -> byte
     ws.title = sheet_name[:31] or "Export"
 
     if rows:
-        headers = list({k for row in rows for k in row.keys()})
+        headers = list(dict.fromkeys(k for row in rows for k in row))
         ws.append(headers)
         for row in rows:
             ws.append([_stringify(row.get(h)) for h in headers])

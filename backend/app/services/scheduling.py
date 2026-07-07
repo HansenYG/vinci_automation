@@ -196,15 +196,22 @@ def assign_tutor(
 
     repos.upsert_offer(db, lesson_id, teacher_id, offer_status="assigned", responded_at=_iso_now())
 
+    # Re-check count after insert to handle concurrent assignments (TOCTOU race)
+    post_offers = repos.get_offers(db, lesson_id)
+    post_count = sum(1 for o in post_offers if o["offer_status"] == "assigned")
+    if post_count > max_t:
+        repos.set_offer_status(db, lesson_id, teacher_id, "withdrawn", responded_at=_iso_now())
+        raise ValueError(f"FULL: This lesson is full — {max_t} tutor(s) already assigned (max).")
+
+    new_assigned_count = post_count
+
     # Always set teacher_id to the newly assigned tutor (primary tutor drives schedule colour)
     updates = {"tutor_assignment": "Tutor assigned", "teacher_id": teacher_id}
 
     # Update lesson status to Assigned when the required number of tutors is met
-    new_assigned_count = len(assigned) + 1  # +1 for the one we just assigned
     if new_assigned_count >= max_t:
         updates["status"] = "Assigned"
     else:
-        # Still needs more tutors — keep HasAcceptance status so it stays visible
         current_status = (lesson.get("raw_status") or "").lower()
         if current_status not in ("assigned", "completed", "cancelled", "rescheduled"):
             updates["status"] = "HasAcceptance"
@@ -301,7 +308,7 @@ def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, cour
     payload = {
         "date": date_str,
         "lesson_id": lesson_code,
-        "status": "Scheduled",
+        "status": "Unassigned",
         "max_tutors": max(1, int(max_tutors or 1)),
         "tutor_assignment": (
             "Tutor unassigned & class is within a week of today" if within

@@ -25,9 +25,8 @@ class Settings(BaseSettings):
 
     # --- Supabase (set in .env) -------------------------------------------
     # Backend uses the service_role key, which bypasses RLS. Keep it secret.
-    # Fallback to the beta project URL if env var is not set.
-    # The URL is not a secret; the service_role KEY must remain secret.
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "https://zigzgzurmuplgcqsnnlv.supabase.co")
+    # SUPABASE_URL must be set in .env (no default — fail fast if missing).
+    SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
 
     # --- WATI (WhatsApp) --------------------------------------------------
@@ -38,7 +37,7 @@ class Settings(BaseSettings):
     WATI_TEMPLATE_CONFIRMATION: str = "tutor_confirmation_extra_info"
     WATI_TEMPLATE_CANCEL_ADMIN: str = "tutor_cancellation_or_reschedule_admin_reminder"
     WATI_BROADCAST_PREFIX: str = "vinci"
-    # Shared secret appended to the webhook URL (?token=...) to reject spoofed calls.
+    # Shared secret sent as Authorization: Bearer <secret> header to reject spoofed calls.
     WATI_WEBHOOK_SECRET: str = ""
 
     # Admin + fallback WhatsApp numbers (digits only, no leading +).

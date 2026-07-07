@@ -61,8 +61,10 @@ def next_lesson_code(db: Client, *, date, start_time, course_name: str | None = 
     d = re.sub(r"\D", "", str(date or ""))[:8] or "00000000"
     hhmm = re.sub(r"\D", "", str(start_time or ""))[:4] or "0000"
     base = f"LES-{d}-{hhmm}-{_acronym(course_name)}"
-    existing = {l.get("lesson_id") for l in repos.list_rows(db, "lessons")}
-    code, i = base, 2
-    while code in existing:
+    code = base
+    i = 2
+    while True:
+        exists = db.table("lessons").select("id").eq("lesson_id", code).limit(1).execute().data
+        if not exists:
+            return code
         code, i = f"{base}-{i}", i + 1
-    return code

@@ -75,19 +75,6 @@ def create_app() -> FastAPI:
         
         return health_status
 
-    # Temporary debug endpoint — remove after diagnosis
-    @app.get("/api/debug", include_in_schema=False)
-    async def debug_env():
-        return {
-            "SUPABASE_URL": settings.SUPABASE_URL,
-            "SUPABASE_KEY_prefix": settings.SUPABASE_KEY[:20] + "..." if settings.SUPABASE_KEY else "MISSING",
-            "SUPABASE_JWT_ALGORITHM": settings.SUPABASE_JWT_ALGORITHM,
-            "LLM_PROVIDER": settings.LLM_PROVIDER,
-            "LLM_BASE_URL": settings.LLM_BASE_URL,
-            "LLM_MODEL": settings.LLM_MODEL,
-            "LLM_API_KEY_prefix": settings.LLM_API_KEY[:20] + "..." if settings.LLM_API_KEY else "MISSING",
-        }
-
     return app
 
 

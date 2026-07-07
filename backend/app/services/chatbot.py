@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from datetime import date, datetime
 
 import httpx
@@ -24,6 +25,8 @@ from supabase import Client
 
 from app.core.config import settings
 from app.services import repos, codes
+
+SCHEDULE_VIEW = "lesson_schedule"
 
 # Preset prompts surfaced as one-click buttons in the UI.
 PRESETS = [
@@ -36,11 +39,13 @@ PRESETS = [
 
 
 def _counts(db: Client) -> dict[str, int]:
+    def _count(table: str) -> int:
+        return db.table(table).select("*", count="exact").limit(1).execute().count or 0
     return {
-        "schools": len(repos.list_rows(db, "schools")),
-        "teachers": len(repos.list_rows(db, "teachers")),
-        "courses": len(repos.list_rows(db, "courses")),
-        "lessons": len(repos.list_rows(db, "lessons")),
+        "schools": _count("schools"),
+        "teachers": _count("teachers"),
+        "courses": _count("courses"),
+        "lessons": _count("lessons"),
     }
 
 
@@ -128,11 +133,34 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     """Free-form answer via LLM, grounded with a live DB snapshot."""
     now = datetime.now()
     today = now.date().isoformat()
-    day_name = now.strftime("%A")   # e.g. "Wednesday"
+    day_name = now.strftime("%A")
     counts = _counts(db)
-    upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:12]]
-    unassigned_all = repos.list_unassigned(db, 1000)
-    urgent_all = db.table("urgent_news").select("*").execute().data or []
+
+    upcoming = [
+        _fmt(r) for r in
+        db.table(SCHEDULE_VIEW).select(
+            "lesson_code, lesson_date, start_time, course_name, status, assigned_teacher_name"
+        ).gte("lesson_date", today).order("lesson_date").limit(8).execute().data or []
+    ]
+
+    unassigned_count = (
+        db.table(SCHEDULE_VIEW).select("*", count="exact")
+        .eq("status", "unassigned").limit(1).execute().count or 0
+    )
+    soonest_unassigned = [
+        _fmt(r) for r in
+        db.table(SCHEDULE_VIEW).select(
+            "lesson_code, lesson_date, start_time, course_name, status, assigned_teacher_name"
+        ).eq("status", "unassigned").order("lesson_date").limit(6).execute().data or []
+    ]
+
+    urgent_count = (
+        db.table("urgent_news").select("*", count="exact").limit(1).execute().count or 0
+    )
+    urgent_items = [
+        {"code": r.get("lesson_code"), "date": str(r.get("lesson_date") or ""), "reason": r.get("reason")}
+        for r in (db.table("urgent_news").select("lesson_code, lesson_date, reason").limit(6).execute().data or [])
+    ]
 
     system = (
         "You are the Vinci Automation admin assistant for a tutoring company. "
@@ -157,9 +185,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "'next week', 'this week', 'next Monday', etc. "
         "When the user asks about a relative date, compute the exact date from this reference.\n"
         f"COUNTS: {counts}\n"
-        f"UNASSIGNED lessons total={len(unassigned_all)}, soonest: {[_fmt(r) for r in unassigned_all[:12]]}\n"
-        f"URGENT (within a week) total={len(urgent_all)}: "
-        f"{[{'code': r.get('lesson_code'), 'date': str(r.get('lesson_date') or ''), 'reason': r.get('reason')} for r in urgent_all[:12]]}\n"
+        f"UNASSIGNED lessons total={unassigned_count}, soonest: {soonest_unassigned}\n"
+        f"URGENT (within a week) total={urgent_count}: {urgent_items}\n"
         f"UPCOMING lessons: {upcoming}\n"
     )
     full_messages = [{"role": "system", "content": system}]
@@ -202,17 +229,32 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
 
 # --- Execute pending actions (after user confirmation) -----------------------
 
+def _resolve_lesson(db: Client, code_or_id: str) -> dict | None:
+    """Resolve a lesson by UUID (id) or human-readable code (lesson_id)."""
+    try:
+        uuid.UUID(code_or_id)
+        rows = db.table("lessons").select("id, lesson_id").eq("id", code_or_id).limit(1).execute().data
+        if rows:
+            return rows[0]
+    except (ValueError, AttributeError):
+        pass
+    rows = db.table("lessons").select("id, lesson_id").eq("lesson_id", code_or_id).limit(1).execute().data
+    if rows:
+        return rows[0]
+    rows = db.table("lessons").select("id, lesson_id").ilike("lesson_id", f"%{code_or_id}%").limit(1).execute().data
+    return rows[0] if rows else None
+
+
 def execute_operation(db: Client, operation: str, params: dict) -> dict:
     """Execute a user-confirmed data-modifying operation."""
     if operation == "reschedule":
         lesson_code = params.get("lesson_id")
         if not lesson_code:
             return {"ok": False, "error": "Missing lesson_id"}
-        # Resolve lesson_code to uuid if needed
-        lessons = db.table("lessons").select("id").eq("lesson_id", lesson_code).limit(1).execute().data
-        if not lessons:
+        resolved = _resolve_lesson(db, lesson_code)
+        if not resolved:
             return {"ok": False, "error": f"Lesson {lesson_code} not found"}
-        lesson_id = lessons[0]["id"]
+        lesson_id = resolved["id"]
         updates = {}
         if params.get("date"): updates["date"] = params["date"]
         if params.get("start_time"): updates["start_time"] = params["start_time"]
@@ -244,10 +286,10 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         lesson_code = params.get("lesson_id")
         if not lesson_code:
             return {"ok": False, "error": "Missing lesson_id"}
-        lessons = db.table("lessons").select("id").eq("lesson_id", lesson_code).limit(1).execute().data
-        if not lessons:
+        resolved = _resolve_lesson(db, lesson_code)
+        if not resolved:
             return {"ok": False, "error": f"Lesson {lesson_code} not found"}
-        repos.delete_row(db, "lessons", lessons[0]["id"])
+        repos.delete_row(db, "lessons", resolved["id"])
         return {"ok": True, "message": f"Lesson {lesson_code} deleted."}
 
     return {"ok": False, "error": f"Unknown operation '{operation}'"}

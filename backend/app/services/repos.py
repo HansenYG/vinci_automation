@@ -48,7 +48,7 @@ def update_row(db: Client, table: str, row_id: str, payload: dict) -> dict | Non
 
 def delete_row(db: Client, table: str, row_id: str) -> bool:
     res = db.table(table).delete().eq(PKS.get(table, "id"), row_id).execute().data
-    return bool(res)
+    return len(res) > 0
 
 
 # --- lessons / schedule ----------------------------------------------------
@@ -109,7 +109,6 @@ def list_dashboard(
     """
     import math
 
-    # ── Helpers ──────────────────────────────────────────────────────────
     def _base_q():
         q = db.table(SCHEDULE_VIEW).select("*", count="exact")
         if date_from:
@@ -122,15 +121,26 @@ def list_dashboard(
             q = q.eq("assigned_teacher_id", teacher_id)
         return q
 
-    def _count(status_in=None, status_eq=None, within_week=False):
-        q = _base_q()
-        if status_in:
-            q = q.in_("status", status_in)
-        elif status_eq:
-            q = q.eq("status", status_eq)
-        if within_week:
-            q = q.eq("within_a_week", True)
-        return q.execute().count or 0
+    def _bulk_counts():
+        """Compute unassigned_offersent, has_acceptance, and urgent counts
+        with minimal data transfer (count header, no row data)."""
+        def _c(**filters):
+            q = db.table(SCHEDULE_VIEW).select("*", count="exact").limit(1)
+            if date_from: q = q.gte("lesson_date", date_from)
+            if date_to: q = q.lte("lesson_date", date_to)
+            if course_id: q = q.eq("course_id", course_id)
+            if teacher_id: q = q.eq("assigned_teacher_id", teacher_id)
+            for k, v in filters.items():
+                if isinstance(v, list):
+                    q = q.in_(k, v)
+                else:
+                    q = q.eq(k, v)
+            return q.execute().count or 0
+        return {
+            "unassigned_offersent": _c(status=["unassigned", "offersent"]),
+            "has_acceptance": _c(status="hasacceptance"),
+            "urgent": _c(status=["unassigned", "offersent", "hasacceptance"], within_a_week=True),
+        }
 
     # ── Status filter path ──────────────────────────────────────────────
     if status:
@@ -145,17 +155,8 @@ def list_dashboard(
         q = q.range(offset, offset + page_size - 1)
         res = q.execute()
         total = res.count or 0
-
-        uo = [s for s in statuses if s in ("unassigned", "offersent")]
-        ha = [s for s in statuses if s == "hasacceptance"]
-        urg = [s for s in statuses if s in ("unassigned", "offersent", "hasacceptance")]
-        counts = {
-            "total": total,
-            "unassigned_offersent": _count(status_in=uo) if uo else 0,
-            "has_acceptance": _count(status_eq="hasacceptance") if ha else 0,
-            "urgent": _count(status_in=urg, within_week=True) if urg else 0,
-        }
-
+        counts = _bulk_counts()
+        counts["total"] = total
         pages = math.ceil(total / page_size) if page_size > 0 else 1
         return {"items": res.data or [], "total": total, "page": page, "page_size": page_size, "pages": pages, "counts": counts}
 
@@ -166,14 +167,8 @@ def list_dashboard(
         q = q.range(offset, offset + page_size - 1)
         res = q.execute()
         total = res.count or 0
-
-        counts = {
-            "total": total,
-            "unassigned_offersent": _count(status_in=["unassigned", "offersent"]),
-            "has_acceptance": _count(status_eq="hasacceptance"),
-            "urgent": _count(status_in=["unassigned", "offersent", "hasacceptance"], within_week=True),
-        }
-
+        counts = _bulk_counts()
+        counts["total"] = total
         pages = math.ceil(total / page_size) if page_size > 0 else 1
         return {"items": res.data or [], "total": total, "page": page, "page_size": page_size, "pages": pages, "counts": counts}
 
@@ -265,12 +260,17 @@ def teachers_by_phone(db: Client, phone: str) -> list[dict]:
     target = _digits(phone)
     if not target:
         return []
-    out = []
-    for t in db.table("teachers").select("*").execute().data or []:
-        tp = _digits(t.get("whatsapp_number"))
-        if tp and (tp == target or tp.endswith(target) or target.endswith(tp)):
-            out.append(t)
-    return out
+
+    # Try exact match first (fast, uses DB index)
+    rows = db.table("teachers").select("*").eq("whatsapp_number", target).execute().data or []
+    if rows:
+        return rows
+
+    # Fallback: suffix match last 10 digits (handles country-code differences)
+    suffix = target[-10:]
+    if len(suffix) >= 8:
+        rows = db.table("teachers").select("*").ilike("whatsapp_number", f"%{suffix}").execute().data or []
+    return rows
 
 
 def find_teacher_by_phone(db: Client, phone: str) -> dict | None:
