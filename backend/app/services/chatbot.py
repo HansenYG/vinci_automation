@@ -101,7 +101,7 @@ def _llm_chat(
     messages: list[dict],
     *,
     temperature: float = 0.4,
-    max_tokens: int = 2000,
+    max_tokens: int = 4096,
     json_mode: bool = False,
 ) -> dict | None:
     """Call the configured LLM provider. Returns parsed JSON body on success, None on error."""
@@ -222,8 +222,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'User: "ICT Python course 24/6改期29/6, 6/7取消, 13/7, 20/7改為21/7"\n'
         'ACTION:{"operation":"create_batch","params":{"course_name":"ICT Python AI Advanced Course","lessons":[{"date":"2026-06-29","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-13","start_time":"14:30","end_time":"17:00"},{"date":"2026-07-21","start_time":"14:30","end_time":"17:00"}]}}\n'
         'I will create 3 lessons. Shall I proceed?\n\n'
-        'User: "無人機小組 24/2, 17/3, 14/4, 時間3:10-4:10pm 另加六月班：9/6, 11/6, 時間3:10-5:10"\n'
-        'ACTION:{"operation":"create_batch","params":{"course_name":"無人機小組","lessons":[{"date":"2026-02-24","start_time":"15:10","end_time":"16:10"},{"date":"2026-03-17","start_time":"15:10","end_time":"16:10"},{"date":"2026-04-14","start_time":"15:10","end_time":"16:10"},{"date":"2026-06-09","start_time":"15:10","end_time":"17:10"},{"date":"2026-06-11","start_time":"15:10","end_time":"17:10"}]}}\n'
+        'User: "Drone Course 10/3, 17/3, 24/3, 時間2-4pm 另加四月班：7/4, 14/4, 時間2:30-4:30"\n'
+        'ACTION:{"operation":"create_batch","params":{"course_name":"Drone Course","lessons":[{"date":"2026-03-10","start_time":"14:00","end_time":"16:00"},{"date":"2026-03-17","start_time":"14:00","end_time":"16:00"},{"date":"2026-03-24","start_time":"14:00","end_time":"16:00"},{"date":"2026-04-07","start_time":"14:30","end_time":"16:30"},{"date":"2026-04-14","start_time":"14:30","end_time":"16:30"}]}}\n'
         'I will create 5 lessons. Shall I proceed?\n\n'
         'User: "how many lessons do I have?"\n'
         'You have 15 lessons in the schedule...\n\n'
@@ -234,7 +234,9 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         f"COUNTS: {counts}\n"
         f"UNASSIGNED lessons total={unassigned_count}, soonest: {soonest_unassigned}\n"
         f"URGENT (within a week) total={urgent_count}: {urgent_items}\n"
-        f"UPCOMING lessons: {upcoming}\n"
+         f"UPCOMING lessons: {upcoming}\n"
+        "CRITICAL: Any message with a course name + dates = create lessons. "
+        "Do NOT just repeat/summarize the dates. Always output ACTION create_batch with those dates.\n"
     )
     full_messages = [{"role": "system", "content": system}]
     full_messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-6:]]
