@@ -1,7 +1,8 @@
 """Inbound WATI webhook — ports `reply handling.js` + `cancellation handling.js`.
 
 Point your WATI webhook at:
-    POST  https://<backend>/api/webhooks/wati?token=<WATI_WEBHOOK_SECRET>
+    POST  https://<backend>/api/webhooks/wati
+With header:  Authorization: Bearer <WATI_WEBHOOK_SECRET>
 
 A typed tutor reply is classified into one intent:
   * "accept"     -> mark their soonest pending offer accepted
@@ -14,9 +15,10 @@ the original guard logic.
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from supabase import Client
 
 from app.core.config import settings
@@ -37,15 +39,23 @@ def _extract_text(payload: dict) -> str:
     ).strip()
 
 
+INTENT_KEYWORDS = {
+    "accept": ["accept", "yes", "i'll take it", "i will take", "i'll do it"],
+    "cancel": ["cancel", "can't make", "cannot make", "unavailable", "can't attend"],
+    "reschedule": ["reschedule", "change date", "move", "different time", "another day"],
+}
+
+
 def _classify(text: str) -> str | None:
-    low = text.lower()
-    if "cancel" in low:
-        return "cancel"
-    if "reschedule" in low:
-        return "reschedule"
-    if "accept" in low:
-        return "accept"
-    return None
+    low = text.lower().strip()
+    scores = Counter()
+    for intent, keywords in INTENT_KEYWORDS.items():
+        for kw in keywords:
+            if kw in low:
+                scores[intent] += 1
+    if not scores:
+        return None
+    return scores.most_common(1)[0][0]
 
 
 def _soonest(views: list[dict]) -> dict | None:
@@ -61,12 +71,14 @@ def _soonest(views: list[dict]) -> dict | None:
 @router.post("/webhooks/wati")
 async def wati_webhook(
     request: Request,
-    token: str = Query(default=""),
+    authorization: str = Header(default=""),
     db: Client = Depends(get_supabase),
 ):
-    # 1. Reject spoofed calls
-    if settings.WATI_WEBHOOK_SECRET and token != settings.WATI_WEBHOOK_SECRET:
-        raise HTTPException(status_code=403, detail="bad token")
+    # 1. Reject spoofed calls — expect "Bearer <secret>" in Authorization header
+    if settings.WATI_WEBHOOK_SECRET:
+        expected = f"Bearer {settings.WATI_WEBHOOK_SECRET}"
+        if authorization.strip() != expected:
+            raise HTTPException(status_code=403, detail="bad token")
 
     try:
         payload = await request.json()
