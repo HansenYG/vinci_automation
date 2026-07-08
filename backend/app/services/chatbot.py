@@ -137,9 +137,23 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
 
     system = (
         "You are the Vinci Automation admin assistant for a tutoring company. "
-        "Always reply in English regardless of the user's language. "
-        "Be concise and helpful. Base every fact ONLY on the data snapshot below — "
+        "You understand Cantonese (廣東話), Mandarin (普通話), and English. "
+        "Be concise and direct. Base every fact ONLY on the data snapshot below — "
         "if it isn't there, say you don't have that detail rather than guessing.\n\n"
+        "Parse Cantonese date/time terms using TODAY as reference:\n"
+        "  今日/聽日/後日 = today/tomorrow/day-after-tomorrow\n"
+        "  上晝(am)/下晝(pm)/朝早(morning)/晏晝(afternoon)/夜晚(evening)\n"
+        "  三點 = 3:00, 三點半 = 3:30, 三點九 = 3:45 (Cantonese traditional)\n\n"
+        "DATE RULES: Use 2026 for all dates. Even if the date has already passed, still create the lesson "
+        "(this is scheduling/admin data entry). Do NOT refuse to create past dates.\n"
+        "SCHEDULE RULES FOR 改期/取消/改為:\n"
+        "  - 取消 (cancelled): SKIP this date entirely.\n"
+        "  - 改期X (rescheduled to X): SKIP the original date, ONLY include the new date X.\n"
+        "  - 改為X (changed to X): SKIP the original date, ONLY include the new date X.\n"
+        "  - Dates without any annotation: include them normally.\n\n"
+        "WHEN TO CREATE: Course name + dates = CREATE lessons. "
+        "Even if the message doesn't say 'create' or 'add', a course name followed by date(s) means "
+        "the user wants to schedule those lessons. ALWAYS output ACTION for this.\n\n"
         "You can RESCHEDULE, UPDATE, CREATE, and DELETE lessons. "
         "When the user asks you to modify data, FIRST explain what you will do, "
         "then output an EXACT JSON block on its own line like this:\n"
@@ -147,15 +161,19 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "The JSON must contain:\n"
         '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
         '  - For "update": {"lesson_id":"...", ANY fields to change as flat keys. Examples: {"lesson_id":"L-2026-010","status":"Cancelled"} or {"lesson_id":"L-2026-010","course":"Advanced Robotics Workshop"} or {"lesson_id":"L-2026-010","notes":"Parent requested afternoon"} or {"lesson_id":"L-2026-010","start_time":"16:00","end_time":"17:30"}}\n'
-        '  - For "create": {"course_id":"...", "date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
+        '  - For "create": use "course_name" (not course_id). Example: {"course_name":"IGCSE Physics","date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
         '  - For "delete": {"lesson_id":"..."}\n'
         "Do NOT execute the action yourself — just output the ACTION: line. "
         "The system will ask the user to confirm before executing.\n\n"
-        "Example:\n"
+        "EXAMPLES:\n"
         'User: "Move the IGCSE Physics lesson on July 10 to 16:00"\n'
         "Assistant: I can reschedule lesson L-2026-010 (IGCSE Physics) from July 10 14:00 to July 10 16:00. Shall I proceed?\n"
-         'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
-         f"TODAY is {day_name} {today} (YYYY-MM-DD). "
+        'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
+        'User: "ICT Python course on 24/2 and 17/3, 3:10-4:10"\n'
+        'Assistant: I will create 2 ICT Python lessons. Shall I proceed?\n'
+        'ACTION:{"operation":"create","params":{"course_name":"ICT Python AI Advanced Course","date":"2026-02-24","start_time":"15:10","end_time":"16:10"}}\n'
+        'ACTION:{"operation":"create","params":{"course_name":"ICT Python AI Advanced Course","date":"2026-03-17","start_time":"15:10","end_time":"16:10"}}\n\n'
+        f"TODAY is {day_name} {today} (YYYY-MM-DD). "
         "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
         "'next week', 'this week', 'next Monday', etc. "
         "When the user asks about a relative date, compute the exact date from this reference.\n"
@@ -237,9 +255,14 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
 
     if operation == "create":
         course_id = params.get("course_id")
+        course_name = params.get("course_name")
+        if not course_id and course_name:
+            rows = db.table("courses").select("course_id").ilike("course_name", course_name).limit(1).execute().data
+            if rows:
+                course_id = rows[0]["course_id"]
         date_val = params.get("date")
         if not course_id or not date_val:
-            return {"ok": False, "error": "Missing course_id or date"}
+            return {"ok": False, "error": "Missing course or date"}
         lesson_code = codes.next_lesson_code(db, date=date_val, start_time=params.get("start_time"), course_name=params.get("course_name"))
         payload = {
             "date": date_val,
