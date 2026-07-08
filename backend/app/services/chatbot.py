@@ -146,7 +146,7 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'ACTION:{"operation":"reschedule|update|create|delete","params":{...}}\n'
         "The JSON must contain:\n"
         '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
-        '  - For "update": {"lesson_id":"...", ANY fields to change as flat keys. Examples: {"lesson_id":"L-2026-010","status":"Cancelled"} or {"lesson_id":"L-2026-010","notes":"Parent requested afternoon"} or {"lesson_id":"L-2026-010","start_time":"16:00","end_time":"17:30"}}\n'
+        '  - For "update": {"lesson_id":"...", ANY fields to change as flat keys. Examples: {"lesson_id":"L-2026-010","status":"Cancelled"} or {"lesson_id":"L-2026-010","course":"Advanced Robotics Workshop"} or {"lesson_id":"L-2026-010","notes":"Parent requested afternoon"} or {"lesson_id":"L-2026-010","start_time":"16:00","end_time":"17:30"}}\n'
         '  - For "create": {"course_id":"...", "date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
         '  - For "delete": {"lesson_id":"..."}\n'
         "Do NOT execute the action yourself — just output the ACTION: line. "
@@ -260,9 +260,15 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         lessons = db.table("lessons").select("id").eq("lesson_id", lesson_code).limit(1).execute().data
         if not lessons:
             return {"ok": False, "error": f"Lesson {lesson_code} not found"}
+        resolved = dict(params)
+        course_name = resolved.pop("course", None) or resolved.pop("course_name", None)
+        if course_name:
+            rows = db.table("courses").select("course_id").ilike("course_name", course_name).limit(1).execute().data
+            if rows:
+                resolved["course_id"] = rows[0]["course_id"]
         updatable_fields = {"date", "start_time", "end_time", "status", "notes",
-                           "lesson_material_link", "role", "max_tutors"}
-        updates = {k: v for k, v in params.items() if k in updatable_fields and k != "lesson_id"}
+                           "lesson_material_link", "role", "max_tutors", "course_id"}
+        updates = {k: v for k, v in resolved.items() if k in updatable_fields and k != "lesson_id"}
         if not updates:
             return {"ok": False, "error": "No valid fields to update"}
         repos.update_row(db, "lessons", lessons[0]["id"], updates)
