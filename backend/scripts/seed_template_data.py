@@ -3,8 +3,10 @@ import os, sys, requests
 from datetime import date, timedelta
 
 API = os.getenv("API_BASE", "https://vinci-automation-api-beta.onrender.com")
-SUPABASE_URL = "https://zigzgzurmuplgcqsnnlv.supabase.co"
-ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppZ3pnenVybXVwbGdjcXNubmx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzUyMjIsImV4cCI6MjA5ODM1MTIyMn0.cGkHBdME80jDYDGRV_IBcGVp0k7IyCzxWSZOLqsZcIQ"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+if not SUPABASE_URL or not ANON_KEY:
+    sys.exit("Error: Set SUPABASE_URL and SUPABASE_ANON_KEY in your .env or environment.")
 TIMEOUT = 15
 
 
