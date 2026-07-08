@@ -31,13 +31,27 @@ const COMMANDS = [
   },
   {
     name: 'update',
-    desc: 'Change lesson fields (status, course, notes…)',
+    desc: 'Change lesson fields (status, course, notes, time…)',
     fields: [
-      { key: 'lesson_id', label: 'Lesson ID', placeholder: 'e.g. L-2026-010' },
-      { key: 'field', label: 'Field to change', placeholder: 'e.g. status, course, notes' },
-      { key: 'value', label: 'New value', placeholder: 'e.g. Cancelled, Advanced Robotics' },
+      { key: 'lesson_id', label: 'Lesson ID', placeholder: 'e.g. L-2026-010', required: true },
+      { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
+      { key: 'start_time', label: 'Start time', placeholder: 'HH:MM' },
+      { key: 'end_time', label: 'End time', placeholder: 'HH:MM' },
+      { key: 'course', label: 'Course', placeholder: 'e.g. Advanced Robotics Workshop' },
+      { key: 'status', label: 'Status', placeholder: 'e.g. Cancelled, Completed, Rescheduled' },
+      { key: 'role', label: 'Role', placeholder: 'Tutor or Teaching Assistant' },
+      { key: 'max_tutors', label: 'Max tutors', placeholder: 'e.g. 2' },
+      { key: 'notes', label: 'Notes', placeholder: 'e.g. Parent requested afternoon' },
+      { key: 'lesson_material_link', label: 'Material link', placeholder: 'e.g. https://…' },
     ],
-    build: (vals) => `Update lesson ${vals.lesson_id}: set ${vals.field} to ${vals.value}`,
+    build: (vals) => {
+      const parts = []
+      for (const f of COMMANDS.find(c => c.name === 'update').fields) {
+        if (f.key === 'lesson_id') continue
+        if (vals[f.key]?.trim()) parts.push(`${f.key}=${vals[f.key].trim()}`)
+      }
+      return `Update lesson ${vals.lesson_id.trim()}: ${parts.join(', ')}`
+    },
   },
   {
     name: 'create',
@@ -111,7 +125,7 @@ export default function ChatPanel() {
 
   const submitCmd = (cmd) => {
     const vals = cmdVals[cmd.name] || {}
-    const missing = cmd.fields.find((f) => !vals[f.key]?.trim())
+    const missing = cmd.fields.find((f) => f.required && !vals[f.key]?.trim())
     if (missing) return
     const text = cmd.build(vals)
     setActiveCmd(null)
@@ -230,7 +244,7 @@ export default function ChatPanel() {
                     ))}
                     <button className="btn btn--primary btn--sm cmd-card__send"
                       onClick={() => submitCmd(cmd)}
-                      disabled={!cmd.fields.every((f) => (cmdVals[cmd.name] || {})[f.key]?.trim())}>
+                      disabled={!cmd.fields.every((f) => !f.required || (cmdVals[cmd.name] || {})[f.key]?.trim())}>
                       Send
                     </button>
                   </div>
