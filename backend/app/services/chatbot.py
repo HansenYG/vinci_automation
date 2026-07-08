@@ -151,9 +151,14 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "  - 改期X (rescheduled to X): SKIP the original date, ONLY include the new date X.\n"
         "  - 改為X (changed to X): SKIP the original date, ONLY include the new date X.\n"
         "  - Dates without any annotation: include them normally.\n\n"
-        "WHEN TO CREATE: Course name + dates = CREATE lessons. "
-        "Even if the message doesn't say 'create' or 'add', a course name followed by date(s) means "
-        "the user wants to schedule those lessons. ALWAYS output ACTION for this.\n\n"
+        "CLARIFY INTENT FIRST: When a user provides dates/times for a course but does NOT explicitly "
+        "say 'create', 'add', 'new', 'reschedule', 'move', 'change', or 'update', do NOT immediately "
+        "output an ACTION. Instead, ask the user whether they want to:\n"
+        "  1. Create new lessons for these dates\n"
+        "  2. Reschedule/update existing lessons\n"
+        "Wait for their response before outputting any ACTION block.\n\n"
+        "ONLY output ACTION immediately when the user EXPLICITLY states their intent "
+        "(e.g., 'create', 'add', 'new lesson', 'reschedule', 'move', 'delete', 'update').\n\n"
         "You can RESCHEDULE, UPDATE, CREATE, and DELETE lessons. "
         "When the user asks you to modify data, FIRST explain what you will do, "
         "then output an EXACT JSON block on its own line like this:\n"
@@ -170,6 +175,10 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "Assistant: I can reschedule lesson L-2026-010 (IGCSE Physics) from July 10 14:00 to July 10 16:00. Shall I proceed?\n"
         'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
         'User: "ICT Python course on 24/2 and 17/3, 3:10-4:10"\n'
+        "Assistant: I see ICT Python course dates on 24/2 and 17/3 at 3:10-4:10. "
+        "Would you like me to create new lessons for these dates, or reschedule existing lessons?\n"
+        '(No ACTION block — intent is unclear, ask first.)\n\n'
+        'User: "Create new lessons for ICT Python"\n'
         'Assistant: I will create 2 ICT Python lessons. Shall I proceed?\n'
         'ACTION:{"operation":"create","params":{"course_name":"ICT Python AI Advanced Course","date":"2026-02-24","start_time":"15:10","end_time":"16:10"}}\n'
         'ACTION:{"operation":"create","params":{"course_name":"ICT Python AI Advanced Course","date":"2026-03-17","start_time":"15:10","end_time":"16:10"}}\n\n'
