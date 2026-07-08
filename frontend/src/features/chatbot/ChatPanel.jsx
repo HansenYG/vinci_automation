@@ -280,7 +280,7 @@ export default function ChatPanel() {
       </div>
 
       <form className="chat-input" onSubmit={(e) => { e.preventDefault(); ask(input) }}>
-        <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about lessons, tutors, schedule…" />
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about lessons, tutors, schedule…" />
         <button className="btn btn--primary" type="submit" disabled={busy || !input.trim()}><SendIcon width={16} height={16} /></button>
       </form>
 
