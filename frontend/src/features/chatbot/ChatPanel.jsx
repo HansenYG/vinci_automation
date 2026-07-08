@@ -44,6 +44,39 @@ export default function ChatPanel() {
   const [executing, setExecuting] = useState(false)
   const [showCommands, setShowCommands] = useState(false)
   const scrollRef = useRef(null)
+  const inputRef = useRef(null)
+
+  const COMMANDS = [
+    {
+      name: 'reschedule',
+      desc: 'Change a lesson\'s date/time',
+      template: 'Reschedule lesson [lesson_id] to [YYYY-MM-DD] at [HH:MM]',
+      fillText: 'Reschedule lesson ',
+    },
+    {
+      name: 'update',
+      desc: 'Change lesson fields (status, course, notes, etc.)',
+      template: 'Update lesson [lesson_id] set [field] to [value]',
+      fillText: 'Update lesson ',
+    },
+    {
+      name: 'create',
+      desc: 'Create a new lesson',
+      template: 'Create a [course_name] lesson on [YYYY-MM-DD] at [HH:MM]-[HH:MM]',
+      fillText: 'Create a new lesson: ',
+    },
+    {
+      name: 'delete',
+      desc: 'Delete a lesson',
+      template: 'Delete lesson [lesson_id]',
+      fillText: 'Delete lesson ',
+    },
+  ]
+
+  const fillTemplate = (cmd) => {
+    setInput(cmd.fillText)
+    inputRef.current?.focus()
+  }
 
   // Persist to localStorage whenever messages change
   useEffect(() => { saveHistory(messages) }, [messages])
@@ -135,32 +168,24 @@ export default function ChatPanel() {
       </div>
 
       <div className="chat-commands-toggle">
-        <button className="cmd-toggle" onClick={() => setShowCommands(!showCommands)}>
-          {showCommands ? '−' : '+'} Available commands
+        <button className={`cmd-toggle ${showCommands ? 'cmd-toggle--open' : ''}`} onClick={() => setShowCommands(!showCommands)}>
+          {showCommands ? '▲' : '▼'} Commands
         </button>
         {showCommands && (
           <div className="chat-commands">
-            <div className="cmd-group">
-              <span className="cmd-name">reschedule</span>
-              <span className="cmd-desc">Change a lesson's date/time</span>
-              <span className="cmd-example"><code>"Move lesson L-2026-010 to July 15 at 16:00"</code></span>
-            </div>
-            <div className="cmd-group">
-              <span className="cmd-name">update</span>
-              <span className="cmd-desc">Change lesson fields (status, notes, etc.)</span>
-              <span className="cmd-example"><code>"Cancel lesson L-2026-010"</code></span>
-            </div>
-            <div className="cmd-group">
-              <span className="cmd-name">create</span>
-              <span className="cmd-desc">Create a new lesson</span>
-              <span className="cmd-example"><code>"Create a new IGCSE Physics lesson on July 20 at 14:00"</code></span>
-            </div>
-            <div className="cmd-group">
-              <span className="cmd-name">delete</span>
-              <span className="cmd-desc">Delete a lesson</span>
-              <span className="cmd-example"><code>"Delete lesson L-2026-010"</code></span>
-            </div>
+            {COMMANDS.map((cmd) => (
+              <div key={cmd.name} className="cmd-card">
+                <div className="cmd-card__head">
+                  <span className="cmd-card__name">{cmd.name}</span>
+                  <span className="cmd-card__desc">{cmd.desc}</span>
+                </div>
+                <button className="cmd-card__btn" onClick={() => fillTemplate(cmd)}>
+                  {cmd.template}
+                </button>
+              </div>
+            ))}
             <div className="cmd-note">
+              Click a template to fill the input, then replace the <code>[bracketed]</code> parts.
               You'll be asked to confirm before any action is executed.
             </div>
           </div>
@@ -192,7 +217,7 @@ export default function ChatPanel() {
       </div>
 
       <form className="chat-input" onSubmit={(e) => { e.preventDefault(); ask(input) }}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about lessons, tutors, schedule…" />
+        <input ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about lessons, tutors, schedule…" />
         <button className="btn btn--primary" type="submit" disabled={busy || !input.trim()}><SendIcon width={16} height={16} /></button>
       </form>
 
