@@ -10,3 +10,4 @@ APScheduler
 python-jose[cryptography]
 passlib[bcrypt]
 cryptography
+deep-translator
