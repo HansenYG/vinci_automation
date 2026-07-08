@@ -179,11 +179,23 @@
   border-radius: 10px;
   overflow: hidden;
 }
+.cmd-card--open {
+  border-color: var(--primary);
+}
 .cmd-card__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
-  padding: 8px 12px 0;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.cmd-card__head:hover {
+  background: var(--surface-2);
 }
 .cmd-card__name {
   font-weight: 700;
@@ -191,29 +203,43 @@
   color: var(--primary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 .cmd-card__desc {
   font-size: 11px;
   color: var(--muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.cmd-card__btn {
-  display: block;
-  width: 100%;
-  background: none;
-  border: none;
-  padding: 8px 12px 10px;
+.cmd-card__chevron {
+  font-size: 9px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.cmd-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px 10px;
+}
+.cmd-card__input {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
   font-size: 13px;
   font-family: inherit;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.1s;
+  background: var(--surface);
 }
-.cmd-card__btn:hover {
-  background: var(--primary-050);
+.cmd-card__input:focus {
+  outline: 2px solid var(--primary-050);
+  border-color: var(--primary);
 }
-.cmd-card__btn:active {
-  background: var(--surface-2);
+.cmd-card__send {
+  align-self: flex-end;
+  margin-top: 2px;
 }
 .cmd-note {
   font-size: 10px;

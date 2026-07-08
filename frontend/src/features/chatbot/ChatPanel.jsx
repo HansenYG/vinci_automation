@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { SendIcon } from '../../components/layout/Icons'
 import { executeAction, exportUrl, getPresets, sendChat } from '../../services/endpoints'
 
 const STORAGE_KEY = 'vinci_chat_history'
-const MAX_STORED  = 60   // keep last 60 messages in localStorage
+const MAX_STORED  = 60
 
 const GREETING = {
   role: 'assistant',
@@ -17,6 +17,48 @@ const SOURCE_LABELS = {
   database: 'Database',
   error: 'Error',
 }
+
+const COMMANDS = [
+  {
+    name: 'reschedule',
+    desc: "Change a lesson's date/time",
+    fields: [
+      { key: 'lesson_id', label: 'Lesson ID', placeholder: 'e.g. L-2026-010' },
+      { key: 'date', label: 'New date', placeholder: 'YYYY-MM-DD' },
+      { key: 'time', label: 'New time', placeholder: 'HH:MM' },
+    ],
+    build: (vals) => `Reschedule lesson ${vals.lesson_id} to ${vals.date} at ${vals.time}`,
+  },
+  {
+    name: 'update',
+    desc: 'Change lesson fields (status, course, notes…)',
+    fields: [
+      { key: 'lesson_id', label: 'Lesson ID', placeholder: 'e.g. L-2026-010' },
+      { key: 'field', label: 'Field to change', placeholder: 'e.g. status, course, notes' },
+      { key: 'value', label: 'New value', placeholder: 'e.g. Cancelled, Advanced Robotics' },
+    ],
+    build: (vals) => `Update lesson ${vals.lesson_id}: set ${vals.field} to ${vals.value}`,
+  },
+  {
+    name: 'create',
+    desc: 'Create a new lesson',
+    fields: [
+      { key: 'course_name', label: 'Course name', placeholder: 'e.g. IGCSE Physics' },
+      { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
+      { key: 'start', label: 'Start time', placeholder: 'HH:MM' },
+      { key: 'end', label: 'End time', placeholder: 'HH:MM' },
+    ],
+    build: (vals) => `Create a ${vals.course_name} lesson on ${vals.date} at ${vals.start}-${vals.end}`,
+  },
+  {
+    name: 'delete',
+    desc: 'Delete a lesson',
+    fields: [
+      { key: 'lesson_id', label: 'Lesson ID', placeholder: 'e.g. L-2026-010' },
+    ],
+    build: (vals) => `Delete lesson ${vals.lesson_id}`,
+  },
+]
 
 function loadHistory() {
   try {
@@ -33,8 +75,11 @@ function loadHistory() {
 function saveHistory(msgs) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-MAX_STORED)))
-  } catch { /* quota or private mode — ignore */ }
+  } catch {}
 }
+
+const EMPTY_VALS = {}
+COMMANDS.forEach((c) => { EMPTY_VALS[c.name] = {}; c.fields.forEach((f) => { EMPTY_VALS[c.name][f.key] = '' }) })
 
 export default function ChatPanel() {
   const [messages, setMessages] = useState(loadHistory)
@@ -43,39 +88,34 @@ export default function ChatPanel() {
   const [busy, setBusy]         = useState(false)
   const [executing, setExecuting] = useState(false)
   const [showCommands, setShowCommands] = useState(false)
+  const [activeCmd, setActiveCmd] = useState(null)
+  const [cmdVals, setCmdVals] = useState({})
   const scrollRef = useRef(null)
-  const inputRef = useRef(null)
 
-  const COMMANDS = [
-    {
-      name: 'reschedule',
-      desc: 'Change a lesson\'s date/time',
-      template: 'Reschedule lesson [lesson_id] to [YYYY-MM-DD] at [HH:MM]',
-      fillText: 'Reschedule lesson ',
-    },
-    {
-      name: 'update',
-      desc: 'Change lesson fields (status, course, notes, etc.)',
-      template: 'Update lesson [lesson_id] set [field] to [value]',
-      fillText: 'Update lesson ',
-    },
-    {
-      name: 'create',
-      desc: 'Create a new lesson',
-      template: 'Create a [course_name] lesson on [YYYY-MM-DD] at [HH:MM]-[HH:MM]',
-      fillText: 'Create a new lesson: ',
-    },
-    {
-      name: 'delete',
-      desc: 'Delete a lesson',
-      template: 'Delete lesson [lesson_id]',
-      fillText: 'Delete lesson ',
-    },
-  ]
+  const resetCmd = useCallback((name) => {
+    setCmdVals((prev) => ({ ...prev, [name]: { ...EMPTY_VALS[name] } }))
+  }, [])
 
-  const fillTemplate = (cmd) => {
-    setInput(cmd.fillText)
-    inputRef.current?.focus()
+  const toggleCmd = (name) => {
+    if (activeCmd === name) {
+      setActiveCmd(null)
+    } else {
+      setActiveCmd(name)
+      if (!cmdVals[name]) resetCmd(name)
+    }
+  }
+
+  const setVal = (cmd, key, val) => {
+    setCmdVals((prev) => ({ ...prev, [cmd]: { ...prev[cmd], [key]: val } }))
+  }
+
+  const submitCmd = (cmd) => {
+    const vals = cmdVals[cmd.name] || {}
+    const missing = cmd.fields.find((f) => !vals[f.key]?.trim())
+    if (missing) return
+    const text = cmd.build(vals)
+    setActiveCmd(null)
+    ask(text)
   }
 
   // Persist to localStorage whenever messages change
@@ -174,20 +214,29 @@ export default function ChatPanel() {
         {showCommands && (
           <div className="chat-commands">
             {COMMANDS.map((cmd) => (
-              <div key={cmd.name} className="cmd-card">
-                <div className="cmd-card__head">
+              <div key={cmd.name} className={`cmd-card ${activeCmd === cmd.name ? 'cmd-card--open' : ''}`}>
+                <button className="cmd-card__head" onClick={() => toggleCmd(cmd.name)}>
                   <span className="cmd-card__name">{cmd.name}</span>
                   <span className="cmd-card__desc">{cmd.desc}</span>
-                </div>
-                <button className="cmd-card__btn" onClick={() => fillTemplate(cmd)}>
-                  {cmd.template}
+                  <span className="cmd-card__chevron">{activeCmd === cmd.name ? '▲' : '▼'}</span>
                 </button>
+                {activeCmd === cmd.name && (
+                  <div className="cmd-card__form">
+                    {cmd.fields.map((f) => (
+                      <input key={f.key} className="cmd-card__input" type="text"
+                        value={(cmdVals[cmd.name] || {})[f.key] || ''}
+                        onChange={(e) => setVal(cmd.name, f.key, e.target.value)}
+                        placeholder={f.placeholder} />
+                    ))}
+                    <button className="btn btn--primary btn--sm cmd-card__send"
+                      onClick={() => submitCmd(cmd)}
+                      disabled={!cmd.fields.every((f) => (cmdVals[cmd.name] || {})[f.key]?.trim())}>
+                      Send
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
-            <div className="cmd-note">
-              Click a template to fill the input, then replace the <code>[bracketed]</code> parts.
-              You'll be asked to confirm before any action is executed.
-            </div>
           </div>
         )}
       </div>
