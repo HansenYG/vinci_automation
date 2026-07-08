@@ -9,7 +9,7 @@ from app.core.config import settings
 
 
 def _build_headers(key: str, user_token: str = "") -> dict[str, str]:
-    headers = {}
+    headers: dict[str, str] = {}
     if key.startswith("sb_"):
         headers["Authorization"] = f"Bearer {key}"
         headers["apikey"] = settings.SUPABASE_ANON_KEY

@@ -46,27 +46,33 @@ def get_row(db: Client, table: str, row_id: str) -> dict | None:
 
 
 def insert_row(db: Client, table: str, payload: dict) -> dict:
+    import logging
+    logger = logging.getLogger(__name__)
     try:
-        return db.table(table).insert(payload).execute().data[0]
-    except Exception:
+        res = db.table(table).insert(payload).execute()
+        if res.data:
+            return res.data[0]
+        logger.warning("insert_row %s — empty data for payload=%s", table, payload)
         return {}
+    except Exception as exc:
+        logger.error("insert_row %s — %s: %s", table, type(exc).__name__, exc)
+        raise
 
 
 def update_row(db: Client, table: str, row_id: str, payload: dict) -> dict | None:
     try:
-        res = db.table(table).update(payload).eq(PKS.get(table, "id"), row_id).execute().data
-        return res[0] if res else None
+        res = db.table(table).update(payload).eq(PKS.get(table, "id"), row_id).execute()
+        return res.data[0] if res.data else None
     except Exception:
         return None
 
 
 def delete_row(db: Client, table: str, row_id: str) -> bool:
     try:
-        res = db.table(table).delete().eq(PKS.get(table, "id"), row_id).execute().data
-        return bool(res)
+        res = db.table(table).delete().eq(PKS.get(table, "id"), row_id).execute()
+        return bool(res.data)
     except Exception:
         return False
-    return len(res) > 0
 
 
 # --- lessons / schedule ----------------------------------------------------

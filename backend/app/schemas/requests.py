@@ -73,11 +73,11 @@ class CourseUpdate(BaseModel):
 # --- Lessons (surrogate id; teacher_id / course_id FKs) -------------------
 class LessonCreate(BaseModel):
     date: date_t
+    start_time: str
+    end_time: str
     lesson_id: str | None = None
     course_id: str | None = None
     teacher_id: str | None = None
-    start_time: str | None = None
-    end_time: str | None = None
     status: str | None = "Unassigned"
     role: str | None = None
     tutor_assignment: str | None = None

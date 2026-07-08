@@ -60,7 +60,10 @@ def create_lesson(body: LessonCreate, db: SyncPostgrestClient = Depends(get_db))
             course_name=(course or {}).get("course_name"),
         )
     row = repos.insert_row(db, "lessons", payload)
-    return repos.get_lesson_view(db, row["id"])
+    lesson_id = row.get("id") if row else None
+    if not lesson_id:
+        raise HTTPException(500, "Failed to create lesson")
+    return repos.get_lesson_view(db, lesson_id)
 
 
 @router.get("/{lesson_id}")

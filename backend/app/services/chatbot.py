@@ -17,18 +17,14 @@ from __future__ import annotations
 
 import json
 import re
-import uuid
 from datetime import date, datetime
 
 import httpx
-from postgrest import SyncPostgrestClient
-
-Client = SyncPostgrestClient
+from supabase import Client
 
 from app.core.config import settings
 from app.services import repos, codes
-
-SCHEDULE_VIEW = "lesson_schedule"
+from app.services.translator import has_chinese, to_english, from_english
 
 # Preset prompts surfaced as one-click buttons in the UI.
 PRESETS = [
@@ -41,13 +37,11 @@ PRESETS = [
 
 
 def _counts(db: Client) -> dict[str, int]:
-    def _count(table: str) -> int:
-        return db.table(table).select("*", count="exact").limit(1).execute().count or 0
     return {
-        "schools": _count("schools"),
-        "teachers": _count("teachers"),
-        "courses": _count("courses"),
-        "lessons": _count("lessons"),
+        "schools": len(repos.list_rows(db, "schools")),
+        "teachers": len(repos.list_rows(db, "teachers")),
+        "courses": len(repos.list_rows(db, "courses")),
+        "lessons": len(repos.list_rows(db, "lessons")),
     }
 
 
@@ -135,45 +129,24 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     """Free-form answer via LLM, grounded with a live DB snapshot."""
     now = datetime.now()
     today = now.date().isoformat()
-    day_name = now.strftime("%A")
+    day_name = now.strftime("%A")   # e.g. "Wednesday"
     counts = _counts(db)
-
-    upcoming = [
-        _fmt(r) for r in
-        db.table(SCHEDULE_VIEW).select(
-            "lesson_code, lesson_date, start_time, course_name, status, assigned_teacher_name"
-        ).gte("lesson_date", today).order("lesson_date").limit(8).execute().data or []
-    ]
-
-    unassigned_count = (
-        db.table(SCHEDULE_VIEW).select("*", count="exact")
-        .eq("status", "unassigned").limit(1).execute().count or 0
-    )
-    soonest_unassigned = [
-        _fmt(r) for r in
-        db.table(SCHEDULE_VIEW).select(
-            "lesson_code, lesson_date, start_time, course_name, status, assigned_teacher_name"
-        ).eq("status", "unassigned").order("lesson_date").limit(6).execute().data or []
-    ]
-
-    urgent_count = (
-        db.table("urgent_news").select("*", count="exact").limit(1).execute().count or 0
-    )
-    urgent_items = [
-        {"code": r.get("lesson_code"), "date": str(r.get("lesson_date") or ""), "reason": r.get("reason")}
-        for r in (db.table("urgent_news").select("lesson_code, lesson_date, reason").limit(6).execute().data or [])
-    ]
+    upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:12]]
+    unassigned_all = repos.list_unassigned(db, 1000)
+    urgent_all = db.table("urgent_news").select("*").execute().data or []
 
     system = (
         "You are the Vinci Automation admin assistant for a tutoring company. "
+        "Always reply in English regardless of the user's language. "
         "Be concise and helpful. Base every fact ONLY on the data snapshot below — "
         "if it isn't there, say you don't have that detail rather than guessing.\n\n"
-        "You can RESCHEDULE, CREATE, and DELETE lessons. "
+        "You can RESCHEDULE, UPDATE, CREATE, and DELETE lessons. "
         "When the user asks you to modify data, FIRST explain what you will do, "
         "then output an EXACT JSON block on its own line like this:\n"
-        'ACTION:{"operation":"reschedule|create|delete","params":{...}}\n'
+        'ACTION:{"operation":"reschedule|update|create|delete","params":{...}}\n'
         "The JSON must contain:\n"
         '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
+        '  - For "update": {"lesson_id":"...", ANY fields to change as flat keys. Examples: {"lesson_id":"L-2026-010","status":"Cancelled"} or {"lesson_id":"L-2026-010","notes":"Parent requested afternoon"} or {"lesson_id":"L-2026-010","start_time":"16:00","end_time":"17:30"}}\n'
         '  - For "create": {"course_id":"...", "date":"YYYY-MM-DD", "start_time":"HH:MM", "end_time":"HH:MM", "max_tutors":1}\n'
         '  - For "delete": {"lesson_id":"..."}\n'
         "Do NOT execute the action yourself — just output the ACTION: line. "
@@ -187,8 +160,9 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "'next week', 'this week', 'next Monday', etc. "
         "When the user asks about a relative date, compute the exact date from this reference.\n"
         f"COUNTS: {counts}\n"
-        f"UNASSIGNED lessons total={unassigned_count}, soonest: {soonest_unassigned}\n"
-        f"URGENT (within a week) total={urgent_count}: {urgent_items}\n"
+        f"UNASSIGNED lessons total={len(unassigned_all)}, soonest: {[_fmt(r) for r in unassigned_all[:12]]}\n"
+        f"URGENT (within a week) total={len(urgent_all)}: "
+        f"{[{'code': r.get('lesson_code'), 'date': str(r.get('lesson_date') or ''), 'reason': r.get('reason')} for r in urgent_all[:12]]}\n"
         f"UPCOMING lessons: {upcoming}\n"
     )
     full_messages = [{"role": "system", "content": system}]
@@ -209,53 +183,37 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
 
 
 def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
-    # LLM first (grounded). Only when it's unreachable do we use the
-    # deterministic DB answers, then the offline message.
-    res = _llm_reply(db, message, history or [])
+    lang = has_chinese(message)
+    eng_msg = to_english(message) if lang else message
+    eng_history = []
+    if history:
+        for h in history:
+            eng_history.append({
+                "role": h.get("role", "user"),
+                "content": to_english(h.get("content", "")) if lang else h.get("content", ""),
+            })
+    res = _llm_reply(db, eng_msg, eng_history or [])
     if res["source"] != "fallback":
-        # Check for ACTION: JSON block in the reply
         reply = res.get("reply", "")
         match = re.search(r'^ACTION:\s*(\{.*\})\s*$', reply, re.MULTILINE)
         if match:
             try:
                 action_data = json.loads(match.group(1))
-                # Strip the ACTION line from the displayed reply
                 clean_reply = re.sub(r'^ACTION:\s*\{.*\}\s*', '', reply, flags=re.MULTILINE).strip()
                 res["reply"] = clean_reply
                 res["pendingAction"] = action_data
             except (json.JSONDecodeError, ValueError):
                 pass
+        if lang:
+            res["reply"] = from_english(res.get("reply", ""), lang)
         return res
-    return _deterministic_answer(db, message) or res
+    det = _deterministic_answer(db, eng_msg) or res
+    if lang and det.get("reply"):
+        det["reply"] = from_english(det["reply"], lang)
+    return det
 
 
 # --- Execute pending actions (after user confirmation) -----------------------
-
-def _resolve_lesson(db: Client, code_or_id: str, *, strict: bool = False) -> dict | None:
-    """Resolve a lesson by UUID (id) or human-readable code (lesson_id).
-
-    Args:
-        db: Supabase client
-        code_or_id: Lesson UUID or lesson_id code
-        strict: If True, only allow exact matches (for destructive operations).
-                If False, fall back to partial ilike match (for read/display).
-    """
-    try:
-        uuid.UUID(code_or_id)
-        rows = db.table("lessons").select("id, lesson_id").eq("id", code_or_id).limit(1).execute().data
-        if rows:
-            return rows[0]
-    except (ValueError, AttributeError):
-        pass
-    rows = db.table("lessons").select("id, lesson_id").eq("lesson_id", code_or_id).limit(1).execute().data
-    if rows:
-        return rows[0]
-    # For destructive operations, refuse partial matches
-    if strict:
-        return None
-    rows = db.table("lessons").select("id, lesson_id").ilike("lesson_id", f"%{code_or_id}%").limit(1).execute().data
-    return rows[0] if rows else None
-
 
 def execute_operation(db: Client, operation: str, params: dict) -> dict:
     """Execute a user-confirmed data-modifying operation."""
@@ -263,11 +221,11 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         lesson_code = params.get("lesson_id")
         if not lesson_code:
             return {"ok": False, "error": "Missing lesson_id"}
-        # Strict match required for destructive operations
-        resolved = _resolve_lesson(db, lesson_code, strict=True)
-        if not resolved:
-            return {"ok": False, "error": f"Lesson {lesson_code} not found (exact match required)"}
-        lesson_id = resolved["id"]
+        # Resolve lesson_code to uuid if needed
+        lessons = db.table("lessons").select("id").eq("lesson_id", lesson_code).limit(1).execute().data
+        if not lessons:
+            return {"ok": False, "error": f"Lesson {lesson_code} not found"}
+        lesson_id = lessons[0]["id"]
         updates = {}
         if params.get("date"): updates["date"] = params["date"]
         if params.get("start_time"): updates["start_time"] = params["start_time"]
@@ -295,15 +253,29 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         repos.insert_row(db, "lessons", payload)
         return {"ok": True, "message": f"Lesson {lesson_code} created."}
 
+    if operation == "update":
+        lesson_code = params.get("lesson_id")
+        if not lesson_code:
+            return {"ok": False, "error": "Missing lesson_id"}
+        lessons = db.table("lessons").select("id").eq("lesson_id", lesson_code).limit(1).execute().data
+        if not lessons:
+            return {"ok": False, "error": f"Lesson {lesson_code} not found"}
+        updatable_fields = {"date", "start_time", "end_time", "status", "notes",
+                           "lesson_material_link", "role", "max_tutors"}
+        updates = {k: v for k, v in params.items() if k in updatable_fields and k != "lesson_id"}
+        if not updates:
+            return {"ok": False, "error": "No valid fields to update"}
+        repos.update_row(db, "lessons", lessons[0]["id"], updates)
+        return {"ok": True, "message": f"Lesson {lesson_code} updated."}
+
     if operation == "delete":
         lesson_code = params.get("lesson_id")
         if not lesson_code:
             return {"ok": False, "error": "Missing lesson_id"}
-        # Strict match required for destructive operations
-        resolved = _resolve_lesson(db, lesson_code, strict=True)
-        if not resolved:
-            return {"ok": False, "error": f"Lesson {lesson_code} not found (exact match required)"}
-        repos.delete_row(db, "lessons", resolved["id"])
+        lessons = db.table("lessons").select("id").eq("lesson_id", lesson_code).limit(1).execute().data
+        if not lessons:
+            return {"ok": False, "error": f"Lesson {lesson_code} not found"}
+        repos.delete_row(db, "lessons", lessons[0]["id"])
         return {"ok": True, "message": f"Lesson {lesson_code} deleted."}
 
     return {"ok": False, "error": f"Unknown operation '{operation}'"}

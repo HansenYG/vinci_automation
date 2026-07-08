@@ -7,7 +7,7 @@ const MAX_STORED  = 60   // keep last 60 messages in localStorage
 
 const GREETING = {
   role: 'assistant',
-  content: "Hi! I'm the Vinci admin assistant. Ask me about lessons (\"show unassigned\", \"urgent within a week\", \"today's schedule\", \"database summary\"), or use a preset below. I can also export data to Excel from the panel on the right.",
+  content: "Hi! I'm the Vinci admin assistant. Ask me about lessons or modify data using natural language. Try \"show unassigned\", \"today's schedule\", or \"database summary\", or use a preset below. I can also export data to Excel from the panel on the right.",
   source: 'system',
 }
 
@@ -42,6 +42,7 @@ export default function ChatPanel() {
   const [input, setInput]       = useState('')
   const [busy, setBusy]         = useState(false)
   const [executing, setExecuting] = useState(false)
+  const [showCommands, setShowCommands] = useState(false)
   const scrollRef = useRef(null)
 
   // Persist to localStorage whenever messages change
@@ -131,6 +132,39 @@ export default function ChatPanel() {
     <div className="chat-window">
       <div className="presets">
         {presets.map((p) => <button key={p.id} className="preset" onClick={() => onPreset(p)}>{p.label}</button>)}
+      </div>
+
+      <div className="chat-commands-toggle">
+        <button className="cmd-toggle" onClick={() => setShowCommands(!showCommands)}>
+          {showCommands ? '−' : '+'} Available commands
+        </button>
+        {showCommands && (
+          <div className="chat-commands">
+            <div className="cmd-group">
+              <span className="cmd-name">reschedule</span>
+              <span className="cmd-desc">Change a lesson's date/time</span>
+              <span className="cmd-example"><code>"Move lesson L-2026-010 to July 15 at 16:00"</code></span>
+            </div>
+            <div className="cmd-group">
+              <span className="cmd-name">update</span>
+              <span className="cmd-desc">Change lesson fields (status, notes, etc.)</span>
+              <span className="cmd-example"><code>"Cancel lesson L-2026-010"</code></span>
+            </div>
+            <div className="cmd-group">
+              <span className="cmd-name">create</span>
+              <span className="cmd-desc">Create a new lesson</span>
+              <span className="cmd-example"><code>"Create a new IGCSE Physics lesson on July 20 at 14:00"</code></span>
+            </div>
+            <div className="cmd-group">
+              <span className="cmd-name">delete</span>
+              <span className="cmd-desc">Delete a lesson</span>
+              <span className="cmd-example"><code>"Delete lesson L-2026-010"</code></span>
+            </div>
+            <div className="cmd-note">
+              You'll be asked to confirm before any action is executed.
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="chat-scroll" ref={scrollRef}>
