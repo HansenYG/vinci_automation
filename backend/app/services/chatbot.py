@@ -132,6 +132,8 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     day_name = now.strftime("%A")   # e.g. "Wednesday"
     counts = _counts(db)
     upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:12]]
+    courses_all = repos.list_rows(db, "courses")
+    course_catalog = [f"{c['course_id']}: {c['course_name']}" for c in courses_all if c.get("course_name")]
     unassigned_all = repos.list_unassigned(db, 1000)
     urgent_all = db.table("urgent_news").select("*").execute().data or []
 
@@ -159,14 +161,26 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         "Wait for their response before outputting any ACTION block.\n\n"
         "ONLY output ACTION immediately when the user EXPLICITLY states their intent "
         "(e.g., 'create', 'add', 'new lesson', 'reschedule', 'move', 'delete', 'update').\n\n"
-        "You can RESCHEDULE, UPDATE, CREATE, and DELETE lessons. "
+        "NON-EXISTENT COURSE HANDLING:\n"
+        "Before creating a lesson, ALWAYS verify the course_name exists in the COURSE CATALOG below.\n"
+        "If the course does NOT exist in the catalog:\n"
+        "  1. Do NOT output any ACTION for creating lessons.\n"
+        "  2. Tell the user: \"The course '[name]' doesn't exist in our system. "
+        "Would you like me to create it first?\"\n"
+        "  3. If the user confirms, output:\n"
+        '     ACTION:{"operation":"create_course","params":{"course_name":"..."}}\n'
+        "     (Include optional fields like course_topic, school_id, course_types if the user mentioned them.)\n"
+        "  4. After the course has been created (the user will say so in the next turn), "
+        "ask if they still want to create the lesson.\n\n"
+        "You can RESCHEDULE, UPDATE, CREATE, DELETE lessons, and CREATE COURSES. "
         "When the user asks you to modify data, FIRST explain what you will do, "
         "then output an EXACT JSON block on its own line like this:\n"
-        'ACTION:{"operation":"reschedule|update|create|delete","params":{...}}\n'
+        'ACTION:{"operation":"reschedule|update|create|delete|create_course","params":{...}}\n'
         "The JSON must contain:\n"
         '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
         '  - For "update": {"lesson_id":"...", ANY fields to change as flat keys. Examples: {"lesson_id":"L-2026-010","status":"Cancelled"} or {"lesson_id":"L-2026-010","course":"Advanced Robotics Workshop"} or {"lesson_id":"L-2026-010","notes":"Parent requested afternoon"} or {"lesson_id":"L-2026-010","start_time":"16:00","end_time":"17:30"}}\n'
         '  - For "create": use "course_name" (not course_id). Example: {"course_name":"IGCSE Physics","date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
+        '  - For "create_course": {"course_name":"...", "course_topic":"..." (optional), "school_id":"..." (optional), "course_types":"..." (optional)}\n'
         '  - For "delete": {"lesson_id":"..."}\n'
         "Do NOT execute the action yourself — just output the ACTION: line. "
         "The system will ask the user to confirm before executing.\n\n"
@@ -182,11 +196,16 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'Assistant: I will create 2 ICT Python lessons. Shall I proceed?\n'
         'ACTION:{"operation":"create","params":{"course_name":"ICT Python AI Advanced Course","date":"2026-02-24","start_time":"15:10","end_time":"16:10"}}\n'
         'ACTION:{"operation":"create","params":{"course_name":"ICT Python AI Advanced Course","date":"2026-03-17","start_time":"15:10","end_time":"16:10"}}\n\n'
+        'User: "Create a lesson for Advanced Rocketry on 24/2 3:10-4:10"\n'
+        'Assistant: The course "Advanced Rocketry" doesn\'t exist in our system. Would you like me to create it first?\n'
+        '(No ACTION block — course not found, ask to create it first.)\n\n'
         f"TODAY is {day_name} {today} (YYYY-MM-DD). "
         "Use this as your reference for 'today', 'tomorrow', 'yesterday', "
         "'next week', 'this week', 'next Monday', etc. "
         "When the user asks about a relative date, compute the exact date from this reference.\n"
         f"COUNTS: {counts}\n"
+        f"COURSE CATALOG (course_id : course_name):\n"
+        f"{chr(10).join(f'  {c}' for c in course_catalog)}\n"
         f"UNASSIGNED lessons total={len(unassigned_all)}, soonest: {[_fmt(r) for r in unassigned_all[:12]]}\n"
         f"URGENT (within a week) total={len(urgent_all)}: "
         f"{[{'code': r.get('lesson_code'), 'date': str(r.get('lesson_date') or ''), 'reason': r.get('reason')} for r in urgent_all[:12]]}\n"
@@ -284,6 +303,18 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         if params.get("end_time"): payload["end_time"] = params["end_time"]
         repos.insert_row(db, "lessons", payload)
         return {"ok": True, "message": f"Lesson {lesson_code} created."}
+
+    if operation == "create_course":
+        course_name = params.get("course_name")
+        if not course_name:
+            return {"ok": False, "error": "Missing course_name"}
+        course_id = codes.next_course_id(db, course_name)
+        payload = {"course_id": course_id, "course_name": course_name}
+        for opt in ("course_topic", "school_id", "course_types", "revenue_per_lesson"):
+            if params.get(opt):
+                payload[opt] = params[opt]
+        repos.insert_row(db, "courses", payload)
+        return {"ok": True, "message": f"Course {course_id} ({course_name}) created. You can now create lessons for this course."}
 
     if operation == "update":
         lesson_code = params.get("lesson_id")
