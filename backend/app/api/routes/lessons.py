@@ -82,6 +82,15 @@ def update_lesson(lesson_id: str, body: LessonUpdate, db: SyncPostgrestClient = 
     return repos.get_lesson_view(db, lesson_id)
 
 
+@router.delete("/cleanup-orphans")
+def cleanup_orphan_lessons(db: SyncPostgrestClient = Depends(get_db)):
+    orphans = db.table("lessons").select("id").is_("course_id", "null").execute().data
+    ids = [o["id"] for o in orphans]
+    if not ids:
+        return {"deleted": 0}
+    db.table("lessons").in_("id", ids).delete().execute()
+    return {"deleted": len(ids)}
+
 @router.delete("/{lesson_id}", status_code=204)
 def delete_lesson(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
     repos.delete_row(db, "lessons", lesson_id)
