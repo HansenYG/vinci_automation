@@ -37,7 +37,7 @@ export default function QuickInputPanel() {
         {tab === 'course' && (
           <MiniForm
             fields={[['course_name', 'Course name', true], ['course_topic', 'Topic']]}
-            select={{ key: 'school_id', label: 'School', options: schools.map((s) => [s.school_id, s.school_name]) }}
+            select={{ key: 'school_name', label: 'School', options: schools.map((s) => [s.school_name, s.school_name]) }}
             onSubmit={(v) => createCourse(v)}
             onDone={(r) => flash(r ? `Course added: ${r.course_id}` : 'Add failed')}
           />
@@ -71,9 +71,10 @@ export default function QuickInputPanel() {
 function LessonForm({ onFlash }) {
   const { invalidate } = useLessons()
   const [courses, setCourses] = useState([])
+  const [schools, setSchools] = useState([])
   const [mode, setMode] = useState('create')
   const [v, setV] = useState({
-    course_id: '', date: '', start_time: '', end_time: '',
+    course_id: '', school_id: '', date: '', start_time: '', end_time: '',
     lesson_material_link: '', max_tutors: '1', lesson_income: '',
     course: '', school: '',
   })
@@ -81,6 +82,7 @@ function LessonForm({ onFlash }) {
   const [result, setResult] = useState(null)
 
   useEffect(() => { getCourses().then(setCourses).catch(() => setCourses([])) }, [])
+  useEffect(() => { getSchools().then(setSchools).catch(() => setSchools([])) }, [])
 
   const set = (k) => (e) => setV((s) => ({ ...s, [k]: e.target.value }))
 
@@ -104,7 +106,7 @@ function LessonForm({ onFlash }) {
         invalidate()
         setResult({ created: true, code: created.lesson_code || created.lesson_id })
         onFlash?.(`Lesson ${created.lesson_code || created.lesson_id} created`)
-        setV({ course_id: '', date: '', start_time: '', end_time: '', lesson_material_link: '', max_tutors: '1', lesson_income: '', course: '', school: '' })
+        setV({ course_id: '', school_id: '', date: '', start_time: '', end_time: '', lesson_material_link: '', max_tutors: '1', lesson_income: '', course: '', school: '' })
       } else {
         const body = Object.fromEntries(
           Object.entries({
@@ -150,12 +152,16 @@ function LessonForm({ onFlash }) {
         {courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
       </select>
 
+      <span className="mini-label">School</span>
+      <select value={v.school} onChange={set('school')}>
+        <option value="">— select school —</option>
+        {schools.map((s) => <option key={s.school_id} value={s.school_name}>{s.school_name}</option>)}
+      </select>
+
       {isAnnounce && !v.course_id && (
         <>
           <span className="mini-label">Or type course name</span>
           <input value={v.course} onChange={set('course')} placeholder="Advanced Robotics Workshop" />
-          <span className="mini-label">School</span>
-          <input value={v.school} onChange={set('school')} placeholder="Harvard University" />
         </>
       )}
 
