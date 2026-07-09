@@ -57,12 +57,13 @@ const COMMANDS = [
     name: 'create',
     desc: 'Create a new lesson',
     fields: [
+      { key: 'school_name', label: 'School name', placeholder: 'e.g. St. Mary\'s School' },
       { key: 'course_name', label: 'Course name', placeholder: 'e.g. IGCSE Physics' },
       { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
       { key: 'start', label: 'Start time', placeholder: 'HH:MM' },
       { key: 'end', label: 'End time', placeholder: 'HH:MM' },
     ],
-    build: (vals) => `Create a ${vals.course_name} lesson on ${vals.date} at ${vals.start}-${vals.end}`,
+    build: (vals) => `Create a ${vals.course_name} lesson at ${vals.school_name} on ${vals.date} at ${vals.start}-${vals.end}`,
   },
   {
     name: 'delete',
