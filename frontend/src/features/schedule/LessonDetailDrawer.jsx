@@ -157,13 +157,24 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
     )
   }
 
-  const saveTime = async () => {
-    if (!startTime.trim() || !endTime.trim()) {
-      flash('Start and end time cannot be empty', 'error')
+  const saveTime = async (field) => {
+    if (field === 'start' && !startTime.trim()) {
+      flash('Start time cannot be empty', 'error')
       return
     }
+    if (field === 'end' && !endTime.trim()) {
+      flash('End time cannot be empty', 'error')
+      return
+    }
+    const updates = {}
+    if (field === 'start' || field === 'both') {
+      updates.start_time = startTime
+    }
+    if (field === 'end' || field === 'both') {
+      updates.end_time = endTime
+    }
     await run(
-      () => updateLesson(lessonId, { start_time: startTime, end_time: endTime }).then(r => r.data),
+      () => updateLesson(lessonId, updates).then(r => r.data),
       () => 'Time updated.'
     )
   }
@@ -264,7 +275,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
               <span className="field__label">Start</span>
               <div className="link-input">
                 <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
-                <button className="btn btn--sm" disabled={busy} onClick={saveTime}>
+                <button className="btn btn--sm" disabled={busy} onClick={() => saveTime('start')}>
                   Save
                 </button>
               </div>
@@ -275,7 +286,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
               <span className="field__label">End</span>
               <div className="link-input">
                 <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
-                <button className="btn btn--sm" disabled={busy} onClick={saveTime}>
+                <button className="btn btn--sm" disabled={busy} onClick={() => saveTime('end')}>
                   Save
                 </button>
               </div>
