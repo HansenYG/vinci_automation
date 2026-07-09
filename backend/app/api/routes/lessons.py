@@ -84,10 +84,12 @@ def update_lesson(lesson_id: str, body: LessonUpdate, db: SyncPostgrestClient = 
 
 @router.delete("/cleanup-orphans")
 def cleanup_orphan_lessons(db: SyncPostgrestClient = Depends(get_db)):
-    orphans = db.table("lessons").select("id").is_("course_id", "null").execute().data
+    orphans = db.table("lessons").select("id").eq("course_id", None).execute().data
     ids = [o["id"] for o in orphans]
     if not ids:
         return {"deleted": 0}
+    db.table("lesson_tutor_offers").in_("lesson_id", ids).delete().execute()
+    db.table("lesson_events").in_("lesson_id", ids).delete().execute()
     db.table("lessons").in_("id", ids).delete().execute()
     return {"deleted": len(ids)}
 
