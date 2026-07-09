@@ -96,6 +96,7 @@ create table if not exists public.lessons (
     offer_sent_timestamp    timestamptz,
     lesson_material_link    text,            -- *** extra field required by the design doc ***
     notes                   text,
+    school_name             text,
     created_at              timestamptz not null default now(),
     updated_at              timestamptz not null default now()
 );
@@ -201,7 +202,7 @@ select
     l.offer_sent_timestamp,
     l.lesson_material_link,
     c.school_id,
-    s.school_name,
+    coalesce(l.school_name, s.school_name) as school_name,
     l.created_at,
     l.updated_at
 from public.lessons l
@@ -315,7 +316,7 @@ select
     l.course_id,
     c.course_name,
     c.school_id,
-    s.school_name,
+    coalesce(l.school_name, s.school_name) as school_name,
     l.teacher_id               as assigned_teacher_id,
     t.teacher_name             as assigned_teacher_name,
     t.whatsapp_number          as assigned_teacher_phone,

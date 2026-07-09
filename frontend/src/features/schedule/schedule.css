@@ -99,7 +99,7 @@
 /* ----- Lesson chip ----- */
 .chip {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: calc(8px * var(--zoom, 1));
   width: 100%;
   text-align: left;
@@ -111,8 +111,10 @@
   font-size: calc(12.5px * var(--zoom, 1));
 }
 .chip:hover { background: var(--surface-2); }
+.chip__body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .chip__time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: calc(11.5px * var(--zoom, 1)); }
-.chip__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip__line { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.chip__school { font-weight: 400; font-size: calc(11px * var(--zoom, 1)); color: var(--muted); }
 .chip.green  { border-left-color: var(--status-green); }
 .chip.red    { border-left-color: var(--status-red); }
 .chip.yellow { border-left-color: var(--status-yellow); }

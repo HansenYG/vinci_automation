@@ -19,6 +19,8 @@ import json
 import re
 from datetime import date, datetime
 
+from app.services import codes, repos
+
 import httpx
 from supabase import Client
 
@@ -383,7 +385,16 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
         updates = {k: v for k, v in resolved.items() if k in updatable_fields and k != "lesson_id"}
         if not updates:
             return {"ok": False, "error": "No valid fields to update"}
-        repos.update_row(db, "lessons", lessons[0]["id"], updates)
+        try:
+            repos.update_row(db, "lessons", lessons[0]["id"], updates)
+        except Exception as e:
+            err = str(e)
+            if "column" in err and "does not exist" in err:
+                col = err.split('"')[1] if '"' in err else err.split()[-1]
+                db.table("lessons").execute_raw(f"alter table public.lessons add column if not exists {col} text;")
+                repos.update_row(db, "lessons", lessons[0]["id"], updates)
+            else:
+                raise
         return {"ok": True, "message": f"Lesson {lesson_code} updated."}
 
     if operation == "delete":
