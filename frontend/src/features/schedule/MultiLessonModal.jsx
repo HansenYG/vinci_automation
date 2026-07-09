@@ -125,7 +125,7 @@ export default function MultiLessonModal({ onClose, onCreated }) {
         <Row label="Course">
           <select value={form.course_name} onChange={set('course_name')} className="link-input" style={fieldStyle}>
             <option value="">— select course —</option>
-            {courses.map((c) => <option key={c.course_id} value={c.course_name}>{c.course_name}</option>))}
+            {courses.map((c) => <option key={c.course_id} value={c.course_name}>{c.course_name}</option>)}
           </select>
         </Row>
 
