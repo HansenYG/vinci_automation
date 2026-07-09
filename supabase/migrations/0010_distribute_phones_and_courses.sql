@@ -38,7 +38,19 @@ where l.id = rc.id;
 -- ── 3. Ensure school_name column exists on lessons ──────────────────────
 alter table public.lessons add column if not exists school_name text;
 
--- ── 4. Fill school_name from course → school for any lesson missing it ──
+-- ── 4. Assign a school to any course that has none, so its lessons get one ─
+with course_fix as (
+  select c.course_id,
+         (select school_id from public.schools order by random() limit 1) as new_school_id
+  from public.courses c
+  where c.school_id is null or c.school_id = ''
+)
+update public.courses c
+set school_id = cf.new_school_id
+from course_fix cf
+where c.course_id = cf.course_id;
+
+-- ── 5. Fill school_name from course → school for any lesson missing it ──
 update public.lessons l
 set school_name = s.school_name
 from public.courses c
