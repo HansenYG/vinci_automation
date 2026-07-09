@@ -7,7 +7,7 @@ alter table public.lessons add column if not exists school_name text;
 
 update public.lessons l
 set school_name = v.school_name
-from public.lessons_full v
+from (select id, school_name from public.lessons_full) v
 where l.id = v.id
   and l.school_name is null
   and v.school_name is not null;
