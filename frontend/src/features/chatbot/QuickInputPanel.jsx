@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
   announceLesson, createCourse, createLesson, createSchool, createTeacher,
-  exportUrl, getCourses, getSchools,
+  exportUrl, getCourses, getSchools, createMultiLesson,
 } from '../../services/endpoints'
 import { useLessonsContext as useLessons } from '../../context/LessonsContext'
 
 const DATASETS = ['lessons', 'unassigned', 'urgent', 'teachers', 'courses', 'schools']
-const TABS = ['lesson', 'teacher', 'course', 'school']
+const TABS = ['lesson', 'multi', 'teacher', 'course', 'school']
 
 export default function QuickInputPanel() {
   const [tab, setTab] = useState('lesson')
@@ -27,6 +27,7 @@ export default function QuickInputPanel() {
           ))}
         </div>
         {tab === 'lesson' && <LessonForm onFlash={flash} />}
+        {tab === 'multi' && <MultiLessonForm onFlash={flash} />}
         {tab === 'teacher' && (
           <MiniForm
             fields={[['teacher_name', 'Full name', true], ['whatsapp_number', 'WhatsApp (digits)'], ['email', 'Email']]}
@@ -243,6 +244,186 @@ function MiniForm({ fields, select, onSubmit, onDone }) {
         </select>
       )}
       <button className="btn btn--primary btn--sm" type="submit" disabled={busy || (required && !v[required])}>Add</button>
+    </form>
+  )
+}
+
+// ─── Multi-lesson form ───────────────────────────────────────────────────────
+function MultiLessonForm({ onFlash }) {
+  const { invalidate } = useLessons()
+  const [courses, setCourses] = useState([])
+  const [form, setForm] = useState({
+    course_name: '',
+    dates_text: `24/6/2026(星期三)(因中五級進行SBA考試,改期)
+29/6/2026(星期一)(因APL交流團,取消)
+6/7/2026(星期一)
+8/7/2026(星期三)
+13/7/2026(星期一)
+15/7/2026(星期三)
+16/7/2026(星期四)
+17/7/2026(星期五)(改為16/7)
+20/7/2026(星期一)
+21/7/2026(星期二) ( 14:30 -17:30)`,
+    default_start_time: '14:30',
+    default_end_time: '17:00',
+    location: 'N404',
+    lesson_material_link: '',
+    max_tutors: '1',
+    lesson_income: '',
+  })
+  const [busy, setBusy] = useState(false)
+  const [preview, setPreview] = useState([])
+
+  useEffect(() => {
+    const loadCourses = async () => {
+      try {
+        const courseList = await getCourses()
+        setCourses(courseList)
+      } catch (e) {
+        console.error('Failed to load courses', e)
+      }
+    }
+    loadCourses()
+  }, [])
+
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+
+  const parsePreview = () => {
+    const lines = form.dates_text.split('\n').filter(l => l.trim())
+    const datePattern = /(\d{1,2})\/(\d{1,2})\/(\d{4})/
+    const timePattern = /(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/
+    const weekdayPattern = /^(星期|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i
+    
+    const parsed = lines.map((line, idx) => {
+      const dateMatch = datePattern.exec(line)
+      const timeMatch = timePattern.exec(line)
+      
+      // Extract notes
+      const notes = []
+      const notePattern = /\(([^)]+)\)/g
+      let noteMatch
+      while ((noteMatch = notePattern.exec(line)) !== null) {
+        const noteContent = noteMatch[1].trim()
+        const isTime = timePattern.test(noteContent)
+        // Skip weekday patterns (星期一, 星期二, etc., Monday, Tuesday, etc.)
+        const isWeekday = weekdayPattern.test(noteContent)
+        if (!isTime && !isWeekday && noteContent) {
+          notes.push(noteContent)
+        }
+      }
+      
+      const isCancelled = notes.some(n => n.includes('取消') || n.toLowerCase().includes('cancel'))
+      
+      return {
+        index: idx,
+        line: line.trim(),
+        date: dateMatch ? `${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}` : 'Invalid date',
+        time: timeMatch ? `${timeMatch[1]}:${timeMatch[2]}-${timeMatch[3]}:${timeMatch[4]}` : `${form.default_start_time}-${form.default_end_time}`,
+        notes: notes.join(', ') || '-',
+        status: isCancelled ? 'Cancelled' : 'Active'
+      }
+    })
+    
+    setPreview(parsed)
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      const body = {
+        course_name: form.course_name,
+        dates_text: form.dates_text,
+        default_start_time: form.default_start_time,
+        default_end_time: form.default_end_time,
+        location: form.location,
+        lesson_material_link: form.lesson_material_link || undefined,
+        max_tutors: parseInt(form.max_tutors) || 1,
+        lesson_income: form.lesson_income ? parseFloat(form.lesson_income) : undefined,
+      }
+      const result = await createMultiLesson(body)
+      invalidate()
+      onFlash?.(`Created ${result.total} lessons${result.failed > 0 ? ` (${result.failed} failed)` : ''}`)
+      // Reset form
+      setForm({
+        course_name: '',
+        dates_text: '',
+        default_start_time: '14:30',
+        default_end_time: '17:00',
+        location: 'N404',
+        lesson_material_link: '',
+        max_tutors: '1',
+        lesson_income: '',
+      })
+      setPreview([])
+    } catch (e2) {
+      onFlash?.(e2?.response?.data?.detail || 'Could not create lessons.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="side-form" onSubmit={submit}>
+      <span className="mini-label">Course</span>
+      <select value={form.course_name} onChange={set('course_name')}>
+        <option value="">— select course —</option>
+        {courses.map((c) => <option key={c.course_id} value={c.course_name}>{c.course_name}</option>)}
+      </select>
+
+      <span className="mini-label">Default time</span>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input type="time" value={form.default_start_time} onChange={set('default_start_time')} style={{ flex: 1 }} />
+        <span className="muted">–</span>
+        <input type="time" value={form.default_end_time} onChange={set('default_end_time')} style={{ flex: 1 }} />
+      </div>
+
+      <span className="mini-label">Location</span>
+      <input value={form.location} onChange={set('location')} placeholder="e.g., N404" />
+
+      <span className="mini-label">Dates & notes</span>
+      <textarea
+        value={form.dates_text}
+        onChange={set('dates_text')}
+        placeholder="Enter dates in format: DD/MM/YYYY(Weekday)(optional notes)"
+        style={{ minHeight: 120, fontSize: 12, fontFamily: 'monospace', resize: 'vertical' }}
+      />
+
+      <button type="button" className="btn btn--sm" onClick={parsePreview} style={{ marginTop: 8, width: '100%' }}>
+        Preview parse
+      </button>
+
+      {preview.length > 0 && (
+        <div style={{ marginTop: 8, background: '#f8fafc', borderRadius: 4, padding: 8, border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--muted)' }}>
+            PARSED: {preview.length} lines
+          </div>
+          {preview.slice(0, 5).map((p, i) => (
+            <div key={i} style={{ fontSize: 11, padding: '2px 0', borderBottom: i < Math.min(4, preview.length - 1) ? '1px solid #e2e8f0' : 'none' }}>
+              {p.date} {p.time} · {p.status}
+            </div>
+          ))}
+          {preview.length > 5 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>...and {preview.length - 5} more</div>}
+        </div>
+      )}
+
+      <span className="mini-label">Material link (optional)</span>
+      <input value={form.lesson_material_link} onChange={set('lesson_material_link')} placeholder="https://…" />
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <span className="mini-label">Tutors</span>
+          <input type="number" min="1" value={form.max_tutors} onChange={set('max_tutors')} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <span className="mini-label">Income (HKD)</span>
+          <input type="number" min="0" step="0.01" value={form.lesson_income} onChange={set('lesson_income')} placeholder="0.00" />
+        </div>
+      </div>
+
+      <button className="btn btn--primary btn--sm" type="submit" disabled={busy || !form.course_name}>
+        {busy ? 'Creating…' : 'Create lessons'}
+      </button>
     </form>
   )
 }

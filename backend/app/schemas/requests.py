@@ -98,6 +98,7 @@ class LessonUpdate(BaseModel):
     status: str | None = None
     role: str | None = None
     tutor_assignment: str | None = None
+    school_name: str | None = None
     lesson_material_link: str | None = None
     max_tutors: int | None = None
     lesson_income: float | None = None

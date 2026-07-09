@@ -88,6 +88,9 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
   const [accepted, setAccepted] = useState([])
   const [material, setMaterial] = useState('')
   const [income, setIncome]     = useState('')
+  const [school, setSchool]     = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime]   = useState('')
   const [busy, setBusy]         = useState(false)
   const [msg, setMsg]           = useState('')
   const [msgType, setMsgType]   = useState('info')
@@ -106,6 +109,9 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
     if (!lessonId) return
     setMaterial(lesson.lesson_material_link || '')
     setIncome(lesson.lesson_income ?? '')
+    setSchool(lesson.school_name || '')
+    setStartTime(lesson.start_time || '')
+    setEndTime(lesson.end_time || '')
     setMsg('')
     setClashPending(null)
     getOffers(lessonId).then(setOffers).catch(() => setOffers([]))
@@ -138,6 +144,39 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
     try   { const r = await fn(); flash(ok(r), 'info'); refresh() }
     catch (e) { flash(e?.response?.data?.detail || 'Action failed — check the backend / WATI config.', 'error') }
     finally   { setBusy(false) }
+  }
+
+  const saveSchool = async () => {
+    if (!school.trim()) {
+      flash('School name cannot be empty', 'error')
+      return
+    }
+    await run(
+      () => updateLesson(lessonId, { school_name: school }).then(r => r.data),
+      () => 'School updated.'
+    )
+  }
+
+  const saveTime = async (field) => {
+    if (field === 'start' && !startTime.trim()) {
+      flash('Start time cannot be empty', 'error')
+      return
+    }
+    if (field === 'end' && !endTime.trim()) {
+      flash('End time cannot be empty', 'error')
+      return
+    }
+    const updates = {}
+    if (field === 'start' || field === 'both') {
+      updates.start_time = startTime
+    }
+    if (field === 'end' || field === 'both') {
+      updates.end_time = endTime
+    }
+    await run(
+      () => updateLesson(lessonId, updates).then(r => r.data),
+      () => 'Time updated.'
+    )
   }
 
   // ── Assign with clash/duplicate/full handling ──────────────────────────────
@@ -218,10 +257,41 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
         <div className="drawer__body">
           {/* Core fields */}
           <div className="field-grid">
-            <Field label="School"         value={lesson.school_name || '—'} />
+            {/* Editable School */}
+            <div className="field">
+              <span className="field__label">School</span>
+              <div className="link-input">
+                <input value={school} placeholder="School name" onChange={(e) => setSchool(e.target.value)} />
+                <button className="btn btn--sm" disabled={busy} onClick={saveSchool}>
+                  Save
+                </button>
+              </div>
+            </div>
+            
             <Field label="Date"           value={lesson.lesson_date} />
-            <Field label="Start"          value={fmtTime(lesson.start_time) || '—'} />
-            <Field label="End"            value={fmtTime(lesson.end_time) || '—'} />
+            
+            {/* Editable Start Time */}
+            <div className="field">
+              <span className="field__label">Start</span>
+              <div className="link-input">
+                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+                <button className="btn btn--sm" disabled={busy} onClick={() => saveTime('start')}>
+                  Save
+                </button>
+              </div>
+            </div>
+            
+            {/* Editable End Time */}
+            <div className="field">
+              <span className="field__label">End</span>
+              <div className="link-input">
+                <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+                <button className="btn btn--sm" disabled={busy} onClick={() => saveTime('end')}>
+                  Save
+                </button>
+              </div>
+            </div>
+            
             <Field label="Assigned tutor" value={lesson.assigned_teacher_name || 'Unassigned'} />
             <Field label="Tutors"         value={`${assignedCount} / ${maxTutors}`} />
             <Field label="Lesson income (HKD)" value={lesson.lesson_income != null ? `$${Number(lesson.lesson_income).toFixed(2)}` : '—'} />
