@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from postgrest import SyncPostgrestClient
+from datetime import datetime, time as time_t
+from typing import Optional
+from pydantic import BaseModel
 
 from app.api.deps import get_db
 from app.schemas.requests import LessonCreate, LessonUpdate
@@ -50,8 +53,8 @@ def list_unassigned(limit: int = 100, db: SyncPostgrestClient = Depends(get_db))
     return repos.list_unassigned(db, limit)
 
 
-@router.post("", status_code=201)
-def create_lesson(body: LessonCreate, db: SyncPostgrestClient = Depends(get_db)):
+def _do_create_lesson(db, body: LessonCreate):
+    """Shared logic: dump, code-gen, insert, return the view row."""
     payload = body.model_dump(mode="json", exclude_none=True)
     if not payload.get("lesson_id"):
         course = repos.get_row(db, "courses", payload["course_id"]) if payload.get("course_id") else None
@@ -64,6 +67,170 @@ def create_lesson(body: LessonCreate, db: SyncPostgrestClient = Depends(get_db))
     if not lesson_id:
         raise HTTPException(500, "Failed to create lesson")
     return repos.get_lesson_view(db, lesson_id)
+
+
+@router.post("", status_code=201)
+def create_lesson(body: LessonCreate, db: SyncPostgrestClient = Depends(get_db)):
+    return _do_create_lesson(db, body)
+
+
+@router.post("/batch", status_code=201)
+def create_lessons_batch(
+    body: list[LessonCreate],
+    db: SyncPostgrestClient = Depends(get_db),
+):
+    """Create multiple lessons in one request. Each entry can have a different
+    date, time, or course. Returns all created view rows."""
+    created = []
+    errors = []
+    for i, item in enumerate(body):
+        try:
+            view = _do_create_lesson(db, item)
+            created.append(view)
+        except Exception as exc:
+            errors.append({"index": i, "date": str(item.date), "detail": str(exc)})
+    return {"created": created, "errors": errors, "total": len(created), "failed": len(errors)}
+
+
+class MultiLessonInput(BaseModel):
+    """Semi-structured lesson input matching the sample format."""
+    course_name: str
+    dates_text: str  # Multi-line text with dates and notes
+    default_start_time: str = "14:30"
+    default_end_time: str = "17:00"
+    location: str | None = None
+    lesson_material_link: str | None = None
+    max_tutors: int = 1
+    lesson_income: float | None = None
+
+
+@router.post("/parse-and-create", status_code=201)
+def parse_and_create_lessons(
+    body: MultiLessonInput,
+    db: SyncPostgrestClient = Depends(get_db),
+):
+    """Parse semi-structured lesson input and create multiple lessons.
+    
+    Expected format for dates_text:
+    - Each line: DD/MM/YYYY(Weekday)(optional note in parentheses)
+    - Examples:
+      - "24/6/2026(星期三)(因中五級進行SBA考試,改期)"
+      - "29/6/2026(星期一)(因APL交流團,取消)"
+      - "21/7/2026(星期二) ( 14:30 -17:30)"  # custom time override
+    """
+    import re
+    from datetime import datetime
+    
+    # Parse the course to get course_id
+    course = None
+    try:
+        courses = repos.list_rows(db, "courses")
+        for c in courses:
+            if c.get("course_name") == body.course_name:
+                course = c
+                break
+        
+        if not course:
+            # Try to find partial match
+            for c in courses:
+                if body.course_name.lower() in c.get("course_name", "").lower():
+                    course = c
+                    break
+    except Exception as e:
+        # If course lookup fails, continue without course
+        pass
+    
+    course_id = course.get("course_id") if course else None
+    
+    # Parse dates from the text
+    lesson_entries = []
+    lines = body.dates_text.strip().split('\n')
+    
+    date_pattern = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{4})')
+    time_pattern = re.compile(r'(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Extract date
+        date_match = date_pattern.search(line)
+        if not date_match:
+            continue
+            
+        day, month, year = date_match.groups()
+        try:
+            lesson_date = datetime(int(year), int(month), int(day)).date()
+        except ValueError:
+            continue
+        
+        # Extract notes (content in parentheses)
+        notes = []
+        note_pattern = re.compile(r'\(([^)]+)\)')
+        for note_match in note_pattern.finditer(line):
+            note_content = note_match.group(1).strip()
+            # Check if it's a time override
+            time_override = time_pattern.search(note_content)
+            if time_override:
+                # This is a time specification, not a note
+                continue
+            # Skip weekday patterns (星期一, 星期二, etc., Monday, Tuesday, etc.)
+            if re.match(r'^(星期|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)', note_content, re.IGNORECASE):
+                continue
+            if note_content:
+                notes.append(note_content)
+        
+        # Check for custom time override
+        time_override = time_pattern.search(line)
+        if time_override:
+            start_h, start_m, end_h, end_m = time_override.groups()
+            start_time = f"{start_h.zfill(2)}:{start_m}"
+            end_time = f"{end_h.zfill(2)}:{end_m}"
+        else:
+            start_time = body.default_start_time
+            end_time = body.default_end_time
+        
+        # Check for cancellation in notes
+        is_cancelled = any("取消" in note or "cancel" in note.lower() for note in notes)
+        
+        # Skip cancelled lessons
+        if is_cancelled:
+            continue
+        
+        # Create lesson entry
+        lesson_entry = LessonCreate(
+            date=lesson_date,
+            start_time=start_time,
+            end_time=end_time,
+            course_id=course_id,
+            lesson_material_link=body.lesson_material_link,
+            max_tutors=body.max_tutors,
+            lesson_income=body.lesson_income,
+            notes=", ".join(notes) if notes else None,
+            status="Unassigned"
+        )
+        lesson_entries.append(lesson_entry)
+    
+    # Create all lessons
+    created = []
+    errors = []
+    
+    for i, entry in enumerate(lesson_entries):
+        try:
+            view = _do_create_lesson(db, entry)
+            created.append(view)
+        except Exception as exc:
+            errors.append({"index": i, "date": str(entry.date), "detail": str(exc)})
+    
+    return {
+        "created": created,
+        "errors": errors,
+        "total": len(created),
+        "failed": len(errors),
+        "course_matched": course is not None,
+        "course_id": course_id
+    }
 
 
 @router.get("/{lesson_id}")
@@ -81,6 +248,18 @@ def update_lesson(lesson_id: str, body: LessonUpdate, db: SyncPostgrestClient = 
         raise HTTPException(404, "lesson not found")
     return repos.get_lesson_view(db, lesson_id)
 
+
+@router.delete("/cleanup-orphans")
+def cleanup_orphan_lessons(db: SyncPostgrestClient = Depends(get_db)):
+    orphans = db.table("lessons").select("id").filter("course_id", "is", "null").execute()
+    ids = [o["id"] for o in orphans.data]
+    if not ids:
+        return {"deleted": 0}
+    for lid in ids:
+        db.table("lesson_tutor_offers").filter("lesson_id", "eq", lid).delete().execute()
+        db.table("lesson_events").filter("lesson_id", "eq", lid).delete().execute()
+        db.table("lessons").filter("id", "eq", lid).delete().execute()
+    return {"deleted": len(ids)}
 
 @router.delete("/{lesson_id}", status_code=204)
 def delete_lesson(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):

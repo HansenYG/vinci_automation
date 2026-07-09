@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '../../components/layout/Layout'
-import { ChevronLeft, ChevronRight } from '../../components/layout/Icons'
+import { ChevronLeft, ChevronRight, PlusIcon } from '../../components/layout/Icons'
 import LessonDetailDrawer from './LessonDetailDrawer'
+import MultiLessonModal from './MultiLessonModal'
 import { DayView, MonthView, WeekView } from './views'
 import { addDays, addMonths, addWeeks, periodLabel, rangeFor } from './dates'
 import { useSchedule } from './useSchedule'
@@ -29,6 +30,7 @@ export default function SchedulePage() {
   const [anchor, setAnchor] = useState(new Date())
   const [selected, setSelected] = useState(null)
   const [zoom, setZoom] = useState(() => clampZoom(Number(localStorage.getItem('vinci.calzoom')) || 1))
+  const [showMultiLessonModal, setShowMultiLessonModal] = useState(false)
   const { setOpen: setDockOpen, setTab: setDockTab } = useDock()
 
   useEffect(() => { localStorage.setItem('vinci.calzoom', String(zoom)) }, [zoom])
@@ -63,7 +65,16 @@ export default function SchedulePage() {
       <PageHeader
         title="Schedule"
         subtitle="The main hub — every lesson at a glance, colour-coded by status."
-        actions={null}
+        actions={
+          <button 
+            className="btn btn--primary" 
+            onClick={() => setShowMultiLessonModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <PlusIcon style={{ width: 16, height: 16 }} />
+            Multiple Lessons
+          </button>
+        }
       />
 
       <div className="content">
@@ -113,6 +124,17 @@ export default function SchedulePage() {
           onClose={() => setSelected(null)}
           onChanged={handleChanged}
           sourceView="schedule"
+        />
+      )}
+      
+      {showMultiLessonModal && (
+        <MultiLessonModal
+          onClose={() => setShowMultiLessonModal(false)}
+          onCreated={(result) => {
+            handleChanged()
+            // Show success feedback
+            console.log('Created lessons:', result)
+          }}
         />
       )}
       {/* NewLessonModal replaced by the unified QuickInputPanel in the assistant dock */}
