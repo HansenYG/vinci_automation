@@ -84,17 +84,14 @@ def update_lesson(lesson_id: str, body: LessonUpdate, db: SyncPostgrestClient = 
 
 @router.delete("/cleanup-orphans")
 def cleanup_orphan_lessons(db: SyncPostgrestClient = Depends(get_db)):
-    orphans = db.table("lessons").select("id").filter("course_id", "is", "null").execute().data
-    ids = [o["id"] for o in orphans]
+    orphans = db.table("lessons").select("id").filter("course_id", "is", "null").execute()
+    ids = [o["id"] for o in orphans.data]
     if not ids:
         return {"deleted": 0}
-    for tid in ids:
-        db.table("lesson_tutor_offers").eq("lesson_id", tid).delete().execute()
-        db.table("lesson_events").eq("lesson_id", tid).delete().execute()
-    db.table("lessions").in_("id", ids).delete().execute()  # This will still fail, fix below
-    # Actually just do individual deletes for safety
     for lid in ids:
-        db.table("lessons").eq("id", lid).delete().execute()
+        db.table("lesson_tutor_offers").filter("lesson_id", "eq", lid).delete().execute()
+        db.table("lesson_events").filter("lesson_id", "eq", lid).delete().execute()
+        db.table("lessons").filter("id", "eq", lid).delete().execute()
     return {"deleted": len(ids)}
 
 @router.delete("/{lesson_id}", status_code=204)
