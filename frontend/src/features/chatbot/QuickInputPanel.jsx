@@ -37,7 +37,6 @@ export default function QuickInputPanel() {
         {tab === 'course' && (
           <MiniForm
             fields={[['course_name', 'Course name', true], ['course_topic', 'Topic']]}
-            select={{ key: 'school_name', label: 'School', options: schools.map((s) => [s.school_name, s.school_name]) }}
             onSubmit={(v) => createCourse(v)}
             onDone={(r) => flash(r ? `Course added: ${r.course_id}` : 'Add failed')}
           />
