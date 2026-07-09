@@ -193,7 +193,7 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'ACTION:{"operation":"reschedule|update|create|delete|create_course|create_school","params":{...}}\n'
         "The JSON must contain:\n"
         '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
-        '  - For "update": {"lesson_id":"...", ANY fields to change as flat keys. Examples: {"lesson_id":"L-2026-010","status":"Cancelled"} or {"lesson_id":"L-2026-010","course":"Advanced Robotics Workshop"} or {"lesson_id":"L-2026-010","notes":"Parent requested afternoon"} or {"lesson_id":"L-2026-010","start_time":"16:00","end_time":"17:30"}}\n'
+        '  - For "update": {"lesson_id":"...", ANY fields to change as flat keys. Examples: {"lesson_id":"L-2026-010","status":"Cancelled"} or {"lesson_id":"L-2026-010","course":"Advanced Robotics Workshop"} or {"lesson_id":"L-2026-010","notes":"Parent requested afternoon"} or {"lesson_id":"L-2026-010","start_time":"16:00","end_time":"17:30"} or {"lesson_id":"L-2026-010","school_name":"St. Mary\'s School"}}\n'
         '  - For "create": use "course_name" AND "school_name" (not ids). Example: {"course_name":"IGCSE Physics","school_name":"St. Mary\'s School","date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
         '  - For "create_course": {"course_name":"...", "school_name":"...", "course_topic":"..." (optional), "course_types":"..." (optional)}\n'
         '  - For "create_school": {"school_name":"..."}\n'
@@ -378,7 +378,8 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
             if rows:
                 resolved["course_id"] = rows[0]["course_id"]
         updatable_fields = {"date", "start_time", "end_time", "status", "notes",
-                           "lesson_material_link", "role", "max_tutors", "course_id"}
+                           "lesson_material_link", "role", "max_tutors", "course_id",
+                           "school_name"}
         updates = {k: v for k, v in resolved.items() if k in updatable_fields and k != "lesson_id"}
         if not updates:
             return {"ok": False, "error": "No valid fields to update"}
