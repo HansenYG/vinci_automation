@@ -94,6 +94,7 @@ function LessonForm({ onFlash }) {
         const body = Object.fromEntries(
           Object.entries({
             course_id: v.course_id || undefined,
+            school_name: v.school || undefined,
             date: v.date,
             start_time: v.start_time || undefined,
             end_time: v.end_time || undefined,
