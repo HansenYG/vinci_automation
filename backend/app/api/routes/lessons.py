@@ -62,7 +62,9 @@ def _do_create_lesson(db, body: LessonCreate):
             db, date=payload.get("date"), start_time=payload.get("start_time"),
             course_name=(course or {}).get("course_name"),
         )
-    # Resolve school_name from course → school when not explicitly provided
+    # Resolve school_id and school_name from course → school when not provided
+    if not payload.get("school_id") and course and course.get("school_id"):
+        payload["school_id"] = course["school_id"]
     if not payload.get("school_name") and course:
         schools = repos.list_rows(db, "schools")
         school = next((s for s in schools if s["school_id"] == course.get("school_id")), None)
