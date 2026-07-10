@@ -87,9 +87,9 @@ function LessonForm({ onFlash }) {
 16/7/2026(星期四)
 17/7/2026(星期五)(改為16/7)
 20/7/2026(星期一)
-21/7/2026(星期二) ( 14:30 -17:30)`,
-    default_start_time: '14:30',
-    default_end_time: '17:00',
+21/7/2026(星期二) ( 00:00 -00:00)`,
+    default_start_time: '00:00',
+    default_end_time: '00:00',
     location: '',
     location_note: 'N404',
   })
