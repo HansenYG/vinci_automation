@@ -74,6 +74,7 @@
   display: flex;
   flex-direction: column;
   gap: calc(4px * var(--zoom, 1));
+  background: #fff;
 }
 .month-cell.dim { background: var(--surface-2); }
 .month-cell__date {
