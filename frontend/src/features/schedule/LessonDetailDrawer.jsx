@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CloseIcon, SendIcon } from '../../components/layout/Icons'
 import {
-  assignTutor, blastLesson, getAcceptedPool, getOffers, resendConfirmation, updateLesson,
+  assignTutor, blastLesson, getAcceptedPool, getOffers, resendConfirmation, updateLesson, getSchools,
 } from '../../services/endpoints'
 import { useLessonsContext } from '../../context/LessonsContext'
 import { fmtTime } from './dates'
@@ -94,6 +94,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
   const [busy, setBusy]         = useState(false)
   const [msg, setMsg]           = useState('')
   const [msgType, setMsgType]   = useState('info')
+  const [schools, setSchools]         = useState([])
   const [confirmCancel, setConfirmCancel] = useState(false)
   const cancelTimerRef = useRef(null)
 
@@ -116,6 +117,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
     setClashPending(null)
     getOffers(lessonId).then(setOffers).catch(() => setOffers([]))
     getAcceptedPool(lessonId).then(setAccepted).catch(() => setAccepted([]))
+    getSchools().then(setSchools).catch(() => setSchools([]))
   }, [lessonId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!lesson) return null
@@ -237,10 +239,13 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
               <span className={`dot bg-${statusMeta.color}`} />
               {statusMeta.label}
             </span>
-            <h2 style={{ margin: '10px 0 2px', fontSize: 19 }}>{lesson.course_name || 'Lesson'}</h2>
+            <h2 style={{ margin: '10px 0 2px', fontSize: 19, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {lesson.start_time && <span className="chip__time">{fmtTime(lesson.start_time)}</span>}
+              {lesson.school_name && <span className="chip__line chip__school">{lesson.school_name}</span>}
+              <span className="chip__line chip__title">{lesson.course_name || lesson.lesson_code || 'Lesson'}</span>
+            </h2>
             <div className="muted" style={{ fontSize: 13 }}>
               {lesson.lesson_code}
-              {lesson.school_name ? ` · ${lesson.school_name}` : ''}
             </div>
             {/* Cross-view navigation */}
             <button
@@ -261,7 +266,10 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             <div className="field">
               <span className="field__label">School</span>
               <div className="link-input">
-                <input value={school} placeholder="School name" onChange={(e) => setSchool(e.target.value)} />
+                <select value={school} onChange={(e) => setSchool(e.target.value)} style={{ flex: 1, padding: '6px 8px', fontSize: 13, borderRadius: 6, border: '1px solid var(--border)' }}>
+                  <option value="">— select school —</option>
+                  {schools.map((s) => <option key={s.school_id} value={s.school_name}>{s.school_name}</option>)}
+                </select>
                 <button className="btn btn--sm" disabled={busy} onClick={saveSchool}>
                   Save
                 </button>

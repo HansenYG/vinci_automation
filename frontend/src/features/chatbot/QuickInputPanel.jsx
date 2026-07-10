@@ -43,7 +43,7 @@ export default function QuickInputPanel() {
         )}
         {tab === 'school' && (
           <MiniForm
-            fields={[['school_name', 'School name', true]]}
+            fields={[['school_name', 'School name', true], ['google_maps_link', 'Google Maps link']]}
             onSubmit={(v) => createSchool(v)}
             onDone={(r) => { flash(r ? `School added: ${r.school_id}` : 'Add failed'); reloadSchools() }}
           />
@@ -90,7 +90,8 @@ function LessonForm({ onFlash }) {
 21/7/2026(星期二) ( 14:30 -17:30)`,
     default_start_time: '14:30',
     default_end_time: '17:00',
-    location: 'N404',
+    location: '',
+    location_note: 'N404',
   })
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
@@ -151,7 +152,8 @@ function LessonForm({ onFlash }) {
           dates_text: v.dates_text,
           default_start_time: v.default_start_time,
           default_end_time: v.default_end_time,
-          location: v.location,
+          school_name: v.location || undefined,
+          location: v.location_note || undefined,
           lesson_material_link: v.lesson_material_link || undefined,
           max_tutors: parseInt(v.max_tutors) || 1,
           lesson_income: v.lesson_income ? parseFloat(v.lesson_income) : undefined,
@@ -246,8 +248,13 @@ function LessonForm({ onFlash }) {
             <input type="time" value={v.default_end_time} onChange={set('default_end_time')} style={{ flex: 1 }} />
           </div>
 
-          <span className="mini-label">Location</span>
-          <input value={v.location} onChange={set('location')} placeholder="e.g., N404" />
+          <span className="mini-label">School</span>
+          <select value={v.location} onChange={set('location')}>
+            <option value="">— select school —</option>
+            {schools.map((s) => <option key={s.school_id} value={s.school_name}>{s.school_name}</option>)}
+          </select>
+          <span className="mini-label">Room (optional)</span>
+          <input value={v.location_note} onChange={set('location_note')} placeholder="e.g., N404" />
 
           <span className="mini-label">Dates & notes</span>
           <textarea
