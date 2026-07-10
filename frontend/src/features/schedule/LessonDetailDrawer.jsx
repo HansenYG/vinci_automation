@@ -153,8 +153,9 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
       flash('School name cannot be empty', 'error')
       return
     }
+    const selectedSchool = schools.find((s) => s.school_name === school)
     await run(
-      () => updateLesson(lessonId, { school_name: school }).then(r => r.data),
+      () => updateLesson(lessonId, { school_name: school, school_id: selectedSchool?.school_id }).then(r => r.data),
       () => 'School updated.'
     )
   }
@@ -274,6 +275,14 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
                   Save
                 </button>
               </div>
+              {(() => {
+                const selectedSchool = schools.find((s) => s.school_name === school)
+                return selectedSchool?.google_maps_link ? (
+                  <a className="muted" style={{ fontSize: 12.5, marginTop: 4 }} href={selectedSchool.google_maps_link} target="_blank" rel="noreferrer">
+                    Open Google Maps ↗
+                  </a>
+                ) : null
+              })()}
             </div>
             
             <Field label="Date"           value={lesson.lesson_date} />

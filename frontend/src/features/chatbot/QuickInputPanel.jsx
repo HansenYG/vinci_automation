@@ -184,10 +184,11 @@ function LessonForm({ onFlash }) {
         onFlash?.(`Lesson ${created.lesson_code || created.lesson_id} created`)
         setV({ course_id: '', school_id: '', date: '', start_time: '', end_time: '', lesson_material_link: '', max_tutors: '1', lesson_income: '', course: '', school: '' })
       } else {
+        const selectedCourse = courses.find((c) => c.course_id === v.course_id)
         const body = Object.fromEntries(
           Object.entries({
             course_id: v.course_id || undefined,
-            course: v.course || undefined,
+            course: selectedCourse?.course_name || v.course || undefined,
             school: v.school || undefined,
             date: v.date,
             start_time: v.start_time || undefined,

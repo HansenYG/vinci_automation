@@ -301,7 +301,7 @@ def handle_cancellation(db: Client, lesson_id: str, teacher_id: str | None, inte
 
 # --- Announce a new lesson + LLM-selected tutor outreach -------------------
 
-def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, course, school, max_tutors=1, lesson_income=None) -> dict:
+def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, course, school, max_tutors=1, lesson_income=None, school_id=None, course_id=None) -> dict:
     """Create a lesson, ask the LLM which tutors fit, and WhatsApp them.
 
     `course` is matched to an existing course (so the lesson links via FK); the
@@ -309,8 +309,8 @@ def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, cour
     """
     from app.services import chatbot
 
-    course_id, course_name, topic = None, (course or ""), ""
-    if course:
+    course_name, topic = (course or ""), ""
+    if not course_id and course:
         rows = db.table("courses").select("*").ilike("course_name", f"%{course}%").limit(1).execute().data or []
         if not rows:
             rows = db.table("courses").select("*").eq("course_id", course).limit(1).execute().data or []
@@ -318,6 +318,11 @@ def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, cour
             course_id = rows[0]["course_id"]
             course_name = rows[0].get("course_name") or course
             topic = rows[0].get("course_topic") or ""
+    elif course_id:
+        row = repos.get_row(db, "courses", course_id)
+        if row:
+            course_name = row.get("course_name") or course or ""
+            topic = row.get("course_topic") or ""
 
     date_str = str(date)
     if not lesson_code:
@@ -333,6 +338,7 @@ def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, cour
             else "Tutor unassigned & class is beyond a week from today"
         ),
     }
+    
     if start_time:
         payload["start_time"] = start_time
     if end_time:
@@ -343,6 +349,8 @@ def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, cour
         payload["school_name"] = school
     if lesson_income is not None:
         payload["lesson_income"] = lesson_income
+    if school_id:
+        payload["school_id"] = school_id
 
     lesson = repos.insert_row(db, "lessons", payload)
     lesson_id = lesson["id"]

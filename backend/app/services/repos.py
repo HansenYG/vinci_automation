@@ -363,7 +363,8 @@ def accepted_teacher_ids(db: Client, lesson_id: str) -> list[str]:
 
 # --- audit log -------------------------------------------------------------
 
-def log_event(db: Client, lesson_id: str | None, teacher_id: str | None, event_type: str, detail: dict | None = None) -> None:
-    db.table("lesson_events").insert(
-        {"lesson_id": lesson_id, "teacher_id": teacher_id, "event_type": event_type, "detail": detail or {}}
-    ).execute()
+def log_event(db: Client, lesson_id: str | None, teacher_id: str | None, event_type: str, school_id: str | None = None, detail: dict | None = None) -> None:
+    payload = {"lesson_id": lesson_id, "teacher_id": teacher_id, "event_type": event_type, "detail": detail or {}}
+    if school_id:
+        payload["school_id"] = school_id
+    db.table("lesson_events").insert(payload).execute()
