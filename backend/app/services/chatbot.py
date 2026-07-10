@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime
+from functools import lru_cache
+import hashlib
 
 from app.services import codes, repos
 
@@ -27,6 +29,10 @@ from supabase import Client
 from app.core.config import settings
 from app.services import repos, codes
 from app.services.translator import has_chinese, to_english, from_english
+
+# Simple in-memory cache for repeated queries (cache up to 100 most recent queries)
+_RESPONSE_CACHE = {}
+_CACHE_MAX_SIZE = 100
 
 # Preset prompts surfaced as one-click buttons in the UI.
 PRESETS = [
@@ -58,11 +64,13 @@ def _fmt(r: dict) -> dict:
     }
 
 
-# --- deterministic answers (used as the OFFLINE fallback) ------------------
+# --- deterministic answers (used as FAST rule-based responses) ------------------
 
 def _deterministic_answer(db: Client, message: str) -> dict | None:
+    """Fast rule-based responses for common queries - instant database queries."""
     m = message.lower()
 
+    # Common keywords for quick rule-based responses
     if "unassigned" in m:
         rows = repos.list_unassigned(db, limit=50)
         lines = [f"- {r['lesson_code']} · {r.get('course_name') or '?'} · {r['lesson_date']} ({r['color']})" for r in rows]
@@ -87,6 +95,25 @@ def _deterministic_answer(db: Client, message: str) -> dict | None:
         reply = f"Schools: {c['schools']}, Teachers: {c['teachers']}, Courses: {c['courses']}, Lessons: {c['lessons']}."
         return {"reply": reply, "source": "db", "data": c}
 
+    # Quick responses for common data requests
+    if "list all teachers" in m or "show teachers" in m:
+        rows = repos.list_rows(db, "teachers", limit=50)
+        lines = [f"- {r['teacher_name']} ({r['teacher_id']})" for r in rows]
+        reply = f"{len(rows)} teacher(s):\n" + "\n".join(lines) if rows else "No teachers found."
+        return {"reply": reply, "source": "db", "data": rows}
+
+    if "list all courses" in m or "show courses" in m:
+        rows = repos.list_rows(db, "courses", limit=50)
+        lines = [f"- {r['course_name']} ({r['course_id']})" for r in rows]
+        reply = f"{len(rows)} course(s):\n" + "\n".join(lines) if rows else "No courses found."
+        return {"reply": reply, "source": "db", "data": rows}
+
+    if "list all schools" in m or "show schools" in m:
+        rows = repos.list_rows(db, "schools", limit=50)
+        lines = [f"- {r['school_name']} ({r['school_id']})" for r in rows]
+        reply = f"{len(rows)} school(s):\n" + "\n".join(lines) if rows else "No schools found."
+        return {"reply": reply, "source": "db", "data": rows}
+
     return None
 
 
@@ -96,7 +123,7 @@ def _llm_chat(
     messages: list[dict],
     *,
     temperature: float = 0.4,
-    max_tokens: int = 400,
+    max_tokens: int = 250,
     json_mode: bool = False,
 ) -> dict | None:
     """Call the configured LLM provider. Returns parsed JSON body on success, None on error."""
@@ -106,7 +133,16 @@ def _llm_chat(
     timeout = settings.LLM_TIMEOUT_SECONDS
 
     try:
-        if provider == "openai":
+        if provider == "groq":
+            headers = {"Authorization": f"Bearer {settings.LLM_API_KEY}", "Content-Type": "application/json"}
+            body = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+            if json_mode:
+                body["response_format"] = {"type": "json_object"}
+            resp = httpx.post(f"{base}/chat/completions", json=body, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            return {"content": data["choices"][0]["message"]["content"].strip()}
+        elif provider == "openai":
             headers = {"Authorization": f"Bearer {settings.LLM_API_KEY}", "Content-Type": "application/json"}
             body: dict = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
             if json_mode:
@@ -133,12 +169,12 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     today = now.date().isoformat()
     day_name = now.strftime("%A")   # e.g. "Wednesday"
     counts = _counts(db)
-    upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:12]]
+    upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:6]]
     courses_all = repos.list_rows(db, "courses")
     course_catalog = [f"{c['course_id']}: {c['course_name']}" for c in courses_all if c.get("course_name")]
     schools_all = repos.list_rows(db, "schools")
     school_catalog = [f"{s['school_id']}: {s['school_name']}" for s in schools_all if s.get("school_name")]
-    unassigned_all = repos.list_unassigned(db, 1000)
+    unassigned_all = repos.list_unassigned(db, 100)
     urgent_all = db.table("urgent_news").select("*").execute().data or []
 
     system = (
@@ -235,7 +271,7 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         f"UPCOMING lessons: {upcoming}\n"
     )
     full_messages = [{"role": "system", "content": system}]
-    full_messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-6:]]
+    full_messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-4:]]
     full_messages.append({"role": "user", "content": message})
 
     result = _llm_chat(full_messages)
@@ -251,6 +287,22 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     }
 
 
+def _get_cache_key(message: str, history: list[dict] | None = None) -> str:
+    """Generate cache key from message and recent history."""
+    history_str = str(history[-2:]) if history else ""
+    return hashlib.md5((message + history_str).encode()).hexdigest()
+
+def _get_cached_response(cache_key: str) -> dict | None:
+    """Check cache for existing response."""
+    return _RESPONSE_CACHE.get(cache_key)
+
+def _set_cached_response(cache_key: str, response: dict):
+    """Cache a response with LRU eviction."""
+    if len(_RESPONSE_CACHE) >= _CACHE_MAX_SIZE:
+        # Remove oldest entry (simple FIFO)
+        _RESPONSE_CACHE.pop(next(iter(_RESPONSE_CACHE)))
+    _RESPONSE_CACHE[cache_key] = response
+
 def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
     lang = has_chinese(message)
     eng_msg = to_english(message) if lang else message
@@ -261,6 +313,26 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
                 "role": h.get("role", "user"),
                 "content": to_english(h.get("content", "")) if lang else h.get("content", ""),
             })
+    
+    # Check cache first for repeated queries
+    cache_key = _get_cache_key(eng_msg, eng_history)
+    cached = _get_cached_response(cache_key)
+    if cached:
+        if lang and cached.get("reply"):
+            cached["reply"] = from_english(cached["reply"], lang)
+        cached["cached"] = True
+        return cached
+    
+    # Try rule-based responses FIRST for instant results (common queries)
+    rule_result = _deterministic_answer(db, eng_msg)
+    if rule_result:
+        if lang and rule_result.get("reply"):
+            rule_result["reply"] = from_english(rule_result["reply"], lang)
+        rule_result["cached"] = False
+        _set_cached_response(cache_key, rule_result)
+        return rule_result
+    
+    # Fall back to LLM for complex queries
     res = _llm_reply(db, eng_msg, eng_history or [])
     if res["source"] != "fallback":
         reply = res.get("reply", "")
@@ -275,10 +347,16 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
                 pass
         if lang:
             res["reply"] = from_english(res.get("reply", ""), lang)
+        res["cached"] = False
+        _set_cached_response(cache_key, res)
         return res
+    
+    # Final fallback to deterministic answers if LLM fails
     det = _deterministic_answer(db, eng_msg) or res
     if lang and det.get("reply"):
         det["reply"] = from_english(det["reply"], lang)
+    det["cached"] = False
+    _set_cached_response(cache_key, det)
     return det
 
 
