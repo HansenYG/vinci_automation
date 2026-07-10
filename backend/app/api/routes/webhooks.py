@@ -164,10 +164,16 @@ async def wati_webhook(
                 pending = repos.offers_for_teacher(db, tid, status="pending")
                 logger.info("[%s] cand=%s  pending_offers=%s",
                              _req_id, tid, [o.get("lesson_id") for o in pending])
-                views = [repos.get_lesson_view(db, o["lesson_id"]) for o in pending]
-                v = _soonest([x for x in views if x])
-                if v:
-                    chosen, lesson = cand, v
+                # Pick the most recently blasted offer, not the soonest lesson.
+                # This way, tapping "Accept" on a new lesson's message accepts
+                # that lesson — not an older lesson that happens to be sooner.
+                pending.sort(key=lambda o: str(o.get("last_blast_at") or ""), reverse=True)
+                for offer in pending:
+                    v = repos.get_lesson_view(db, offer["lesson_id"])
+                    if v:
+                        chosen, lesson = cand, v
+                        break
+                if chosen:
                     break
             if not lesson:
                 logger.warning("[%s] no pending offer for any candidate", _req_id)
