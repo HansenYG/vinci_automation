@@ -30,20 +30,27 @@ router = APIRouter()
 
 
 def _extract_text(payload: dict) -> str:
-    return str(
-        payload.get("text")
-        or (payload.get("buttonReply") or {}).get("text")
-        or (payload.get("interactiveButtonReply") or {}).get("text")
-        or (payload.get("listReply") or {}).get("title")
-        or (payload.get("message") or {}).get("text")
+    def _val(v):
+        if isinstance(v, str):
+            return v
+        if isinstance(v, dict):
+            return str(v.get("body") or v.get("text") or "")
+        return str(v) if v else ""
+    return (
+        _val(payload.get("text"))
+        or _val((payload.get("buttonReply") or {}).get("text"))
+        or _val((payload.get("interactiveButtonReply") or {}).get("text"))
+        or _val((payload.get("listReply") or {}).get("title"))
+        or _val((payload.get("message") or {}).get("text"))
+        or (payload.get("msg") or {}).get("body", "")
         or ""
     ).strip()
 
 
 INTENT_KEYWORDS = {
-    "accept": ["accept", "yes", "i'll take it", "i will take", "i'll do it"],
-    "cancel": ["cancel", "can't make", "cannot make", "unavailable", "can't attend"],
-    "reschedule": ["reschedule", "change date", "move", "different time", "another day"],
+    "accept": ["accept", "yes", "i'll take it", "i will take", "i'll do it", "接受", "可以"],
+    "cancel": ["cancel", "can't make", "cannot make", "unavailable", "can't attend", "取消", "不能"],
+    "reschedule": ["reschedule", "change date", "move", "different time", "another day", "改期", "改時間"],
 }
 
 
@@ -96,9 +103,10 @@ async def wati_webhook(
         form = await request.form()
         payload = dict(form)
 
-    # 2. Trigger guard: only act on an incoming, non-owner text-ish message
+    # 2. Trigger guard: only act on an incoming, non-owner text-ish or
+    #    interactive (button reply) message
     event_type = str(payload.get("eventType", "")).lower()
-    if event_type and event_type != "message":
+    if event_type and event_type not in ("message", "interactive"):
         return {"status": "ignored", "reason": f"event '{event_type}'"}
     if payload.get("owner") in (True, "true"):
         return {"status": "ignored", "reason": "outgoing message"}
