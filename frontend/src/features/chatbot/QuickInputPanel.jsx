@@ -74,7 +74,7 @@ function LessonForm({ onFlash }) {
   const [schools, setSchools] = useState([])
   const [mode, setMode] = useState('create')
   const [v, setV] = useState({
-    course_id: '', school_id: '', date: '', start_time: '', end_time: '',
+    course_id: '', school_id: '', date: '', start_time: '00:00', end_time: '00:00',
     lesson_material_link: '', max_tutors: '1', lesson_income: '',
     course: '', school: '',
     // Multi-lesson specific fields
@@ -182,7 +182,7 @@ function LessonForm({ onFlash }) {
         invalidate()
         setResult({ created: true, code: created.lesson_code || created.lesson_id })
         onFlash?.(`Lesson ${created.lesson_code || created.lesson_id} created`)
-        setV({ course_id: '', school_id: '', date: '', start_time: '', end_time: '', lesson_material_link: '', max_tutors: '1', lesson_income: '', course: '', school: '' })
+        setV({ course_id: '', school_id: '', date: '', start_time: '00:00', end_time: '00:00', lesson_material_link: '', max_tutors: '1', lesson_income: '', course: '', school: '' })
       } else {
         const selectedCourse = courses.find((c) => c.course_id === v.course_id)
         const body = Object.fromEntries(
