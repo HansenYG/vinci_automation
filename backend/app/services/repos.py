@@ -301,7 +301,7 @@ def teachers_by_phone(db: Client, phone: str) -> list[dict]:
     matched = []
     for t in all_teachers:
         stored = _digits(t.get("whatsapp_number"))
-        if stored and (target.endswith(stored) or stored.endswith(target)):
+        if stored and (stored in target or target in stored):
             matched.append(t)
     return matched
 
