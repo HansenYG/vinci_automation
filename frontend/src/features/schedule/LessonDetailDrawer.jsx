@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CloseIcon, SendIcon } from '../../components/layout/Icons'
 import {
-  assignTutor, blastLesson, getAcceptedPool, getOffers, resendConfirmation, updateLesson, getSchools,
+  acceptTutor, assignTutor, blastLesson, getAcceptedPool, getOffers, resendConfirmation, updateLesson, getSchools,
 } from '../../services/endpoints'
 import { useLessonsContext } from '../../context/LessonsContext'
 import { fmtTime } from './dates'
@@ -212,6 +212,21 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
       } else {
         flash(err?.response?.data?.detail || 'Assignment failed — check the backend.', 'error')
       }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Accept a pending tutor (admin action — bypasses WhatsApp)
+  const doAccept = async (teacherId) => {
+    setBusy(true)
+    setMsg('')
+    try {
+      await acceptTutor(lessonId, teacherId)
+      flash('Tutor accepted — now visible in the Accepted tutors pool.', 'info')
+      refresh()
+    } catch (err) {
+      flash(err?.response?.data?.detail || 'Accept failed — check the backend.', 'error')
     } finally {
       setBusy(false)
     }
@@ -455,12 +470,45 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
           <div className="field">
             <span className="drawer__section-title">Offer pool ({offers.length})</span>
             {offers.length === 0 && <span className="muted" style={{ fontSize: 13, marginTop: 6 }}>No tutors offered yet — send a blast.</span>}
-            {offers.map((o) => (
-              <div className="pool-row" key={o.id}>
-                <span>{o.teacher?.teacher_name || o.teacher_id}</span>
-                <span className="muted" style={{ fontSize: 13 }}>{o.offer_status}</span>
-              </div>
-            ))}
+            {offers.map((o) => {
+              const isPending = o.offer_status === 'pending'
+              const isAccepted = o.offer_status === 'accepted'
+              const isAssigned = o.offer_status === 'assigned'
+              return (
+                <div className="pool-row" key={o.id}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 500 }}>{o.teacher?.teacher_name || o.teacher_id}</span>
+                      {isAssigned && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, background: '#dcfce7', color: '#16a34a',
+                          padding: '1px 6px', borderRadius: 10, letterSpacing: 0.3,
+                        }}>ASSIGNED</span>
+                      )}
+                      {isAccepted && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, background: '#dbeafe', color: '#2563eb',
+                          padding: '1px 6px', borderRadius: 10, letterSpacing: 0.3,
+                        }}>ACCEPTED</span>
+                      )}
+                    </div>
+                    <span className="muted" style={{ fontSize: 12 }}>{o.teacher?.whatsapp_number || ''}</span>
+                  </div>
+                  {isPending && (
+                    <button
+                      className="btn btn--sm btn--primary"
+                      disabled={busy}
+                      onClick={() => doAccept(o.teacher_id)}
+                    >
+                      Accept
+                    </button>
+                  )}
+                  {!isPending && (
+                    <span className="muted" style={{ fontSize: 12, textTransform: 'capitalize' }}>{o.offer_status}</span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       </aside>

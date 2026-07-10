@@ -82,6 +82,21 @@ def announce_lesson(body: AnnounceLessonRequest, db: SyncPostgrestClient = Depen
     )
 
 
+@router.post("/lessons/{lesson_id}/accept")
+def accept_tutor(lesson_id: str, teacher_id: str = Query(...), db: SyncPostgrestClient = Depends(get_db)):
+    """Admin action: accept a pending tutor (sets offer_status to 'accepted')
+    so they appear in the accepted pool and can be assigned."""
+    offer = repos.get_offers(db, lesson_id)
+    match = next((o for o in offer if o["teacher_id"] == teacher_id), None)
+    if not match:
+        raise HTTPException(404, "No offer found for this teacher on this lesson")
+    if match["offer_status"] == "accepted":
+        return {"lesson_id": lesson_id, "teacher_id": teacher_id, "offer_status": "accepted", "already": True}
+    if match["offer_status"] == "assigned":
+        raise HTTPException(400, "Tutor is already assigned")
+    return scheduling.record_acceptance(db, lesson_id, teacher_id)
+
+
 @router.post("/lessons/{lesson_id}/assign")
 def assign(lesson_id: str, body: AssignRequest, db: SyncPostgrestClient = Depends(get_db)):
     from fastapi.responses import JSONResponse
