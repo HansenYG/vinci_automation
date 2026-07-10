@@ -20,8 +20,6 @@ export const getDashboardLessons = (params = {}) =>
 // --- Scheduling triggers ---
 export const getAcceptedPool = (id) => data(api.get(`/api/scheduling/lessons/${id}/accepted`))
 export const blastLesson = (id) => data(api.post(`/api/scheduling/lessons/${id}/blast`))
-export const acceptTutor = (id, teacherId) =>
-  data(api.post(`/api/scheduling/lessons/${id}/accept`, null, { params: { teacher_id: teacherId } }))
 export const assignTutor = (id, teacherId, sendFiles = true, forceReassign = false) =>
   api.post(`/api/scheduling/lessons/${id}/assign`, {
     teacher_id: teacherId,
