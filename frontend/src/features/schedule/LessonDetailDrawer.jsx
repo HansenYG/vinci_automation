@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CloseIcon, SendIcon } from '../../components/layout/Icons'
 import {
-  acceptTutor, assignTutor, blastLesson, getAcceptedPool, getOffers, resendConfirmation, updateLesson, getSchools,
+  assignTutor, blastLesson, getAcceptedPool, getOffers, resendConfirmation, updateLesson, getSchools,
 } from '../../services/endpoints'
 import { useLessonsContext } from '../../context/LessonsContext'
 import { fmtTime } from './dates'
@@ -218,19 +218,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
   }
 
   // Accept a pending tutor (admin action — bypasses WhatsApp)
-  const doAccept = async (teacherId) => {
-    setBusy(true)
-    setMsg('')
-    try {
-      await acceptTutor(lessonId, teacherId)
-      flash('Tutor accepted — now visible in the Accepted tutors pool.', 'info')
-      refresh()
-    } catch (err) {
-      flash(err?.response?.data?.detail || 'Accept failed — check the backend.', 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
+  // This has been removed in favor of WhatsApp-only acceptances
 
   const handleClashConfirm = () => {
     if (!clashPending) return
@@ -471,7 +459,6 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             <span className="drawer__section-title">Offer pool ({offers.length})</span>
             {offers.length === 0 && <span className="muted" style={{ fontSize: 13, marginTop: 6 }}>No tutors offered yet — send a blast.</span>}
             {offers.map((o) => {
-              const isPending = o.offer_status === 'pending'
               const isAccepted = o.offer_status === 'accepted'
               const isAssigned = o.offer_status === 'assigned'
               return (
@@ -494,18 +481,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
                     </div>
                     <span className="muted" style={{ fontSize: 12 }}>{o.teacher?.whatsapp_number || ''}</span>
                   </div>
-                  {isPending && (
-                    <button
-                      className="btn btn--sm btn--primary"
-                      disabled={busy}
-                      onClick={() => doAccept(o.teacher_id)}
-                    >
-                      Accept
-                    </button>
-                  )}
-                  {!isPending && (
-                    <span className="muted" style={{ fontSize: 12, textTransform: 'capitalize' }}>{o.offer_status}</span>
-                  )}
+                  <span className="muted" style={{ fontSize: 12, textTransform: 'capitalize' }}>{o.offer_status}</span>
                 </div>
               )
             })}

@@ -39,12 +39,33 @@ def _extract_text(payload: dict) -> str:
         if isinstance(v, dict):
             return str(v.get("body") or v.get("text") or v.get("title") or "")
         return str(v) if v else ""
+        
+    # Handle WATI/WhatsApp Cloud API 'interactive' payload structure
+    interactive = payload.get("interactive") or {}
+    if isinstance(interactive, dict):
+        # Check button reply
+        btn_reply = interactive.get("button_reply") or {}
+        if isinstance(btn_reply, dict):
+            val = _val(btn_reply.get("title") or btn_reply.get("id"))
+            if val:
+                return val
+        # Check list reply
+        list_reply = interactive.get("list_reply") or {}
+        if isinstance(list_reply, dict):
+            val = _val(list_reply.get("title") or list_reply.get("id"))
+            if val:
+                return val
+
+    # Legacy flat button structures
     for btn_key in ("buttonReply", "interactiveButtonReply"):
         btn = payload.get(btn_key) or {}
         for field in ("text", "title", "id"):
-            val = _val(btn.get(field))
-            if val:
-                return val
+            if isinstance(btn, dict):
+                val = _val(btn.get(field))
+                if val:
+                    return val
+
+    # Fallback to text fields
     return (
         _val(payload.get("text"))
         or _val((payload.get("listReply") or {}).get("title"))
