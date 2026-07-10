@@ -369,7 +369,12 @@ def accepted_teacher_ids(db: Client, lesson_id: str) -> list[str]:
 # --- audit log -------------------------------------------------------------
 
 def log_event(db: Client, lesson_id: str | None, teacher_id: str | None, event_type: str, school_id: str | None = None, detail: dict | None = None) -> None:
+    import logging
+    logger = logging.getLogger(__name__)
     payload = {"lesson_id": lesson_id, "teacher_id": teacher_id, "event_type": event_type, "detail": detail or {}}
     if school_id:
         payload["school_id"] = school_id
-    db.table("lesson_events").insert(payload).execute()
+    try:
+        db.table("lesson_events").insert(payload).execute()
+    except Exception as exc:
+        logger.warning("log_event failed (non-fatal): %s — %s", event_type, exc)
