@@ -41,7 +41,7 @@ def _extract_text(payload: dict) -> str:
         return str(v) if v else ""
         
     # Handle WATI/WhatsApp Cloud API 'interactive' payload structure
-    interactive = payload.get("interactive") or {}
+    interactive = payload.get("interactive") or (payload.get("message") or {}).get("interactive") or {}
     if isinstance(interactive, dict):
         # Check button reply
         btn_reply = interactive.get("button_reply") or {}
