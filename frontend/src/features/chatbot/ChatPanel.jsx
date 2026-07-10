@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SendIcon } from '../../components/layout/Icons'
-import { executeAction, exportUrl, getPresets, sendChat } from '../../services/endpoints'
+import { executeAction, exportUrl, getCourses, getPresets, getSchools, sendChat } from '../../services/endpoints'
 
 const STORAGE_KEY = 'vinci_chat_history'
 const MAX_STORED  = 60
@@ -24,8 +24,8 @@ const COMMANDS = [
     desc: "Change a lesson's date/time",
     fields: [
       { key: 'lesson_id', label: 'Lesson ID', placeholder: 'e.g. L-2026-010' },
-      { key: 'date', label: 'New date', placeholder: 'YYYY-MM-DD' },
-      { key: 'time', label: 'New time', placeholder: 'HH:MM' },
+      { key: 'date', label: 'New date', placeholder: 'YYYY-MM-DD', type: 'date' },
+      { key: 'time', label: 'New time', placeholder: 'HH:MM', type: 'time' },
     ],
     build: (vals) => `Reschedule lesson ${vals.lesson_id} to ${vals.date} at ${vals.time}`,
   },
@@ -34,9 +34,9 @@ const COMMANDS = [
     desc: 'Change lesson fields (status, course, notes, time…)',
     fields: [
       { key: 'lesson_id', label: 'Lesson ID', placeholder: 'e.g. L-2026-010', required: true },
-      { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
-      { key: 'start_time', label: 'Start time', placeholder: 'HH:MM' },
-      { key: 'end_time', label: 'End time', placeholder: 'HH:MM' },
+      { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD', type: 'date' },
+      { key: 'start_time', label: 'Start time', placeholder: 'HH:MM', type: 'time' },
+      { key: 'end_time', label: 'End time', placeholder: 'HH:MM', type: 'time' },
       { key: 'course', label: 'Course', placeholder: 'e.g. Advanced Robotics Workshop' },
       { key: 'status', label: 'Status', placeholder: 'e.g. Cancelled, Completed, Rescheduled' },
       { key: 'role', label: 'Role', placeholder: 'Tutor or Teaching Assistant' },
@@ -57,13 +57,16 @@ const COMMANDS = [
     name: 'create',
     desc: 'Create a new lesson',
     fields: [
-      { key: 'school_name', label: 'School name', placeholder: 'e.g. St. Mary\'s School' },
-      { key: 'course_name', label: 'Course name', placeholder: 'e.g. IGCSE Physics' },
-      { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD' },
-      { key: 'start', label: 'Start time', placeholder: 'HH:MM' },
-      { key: 'end', label: 'End time', placeholder: 'HH:MM' },
+      { key: 'course_name', label: 'Course', placeholder: '— select course —', type: 'select', optionsKey: 'courses', optionValue: 'course_id', optionLabel: 'course_name', addAny: true },
+      { key: 'school_name', label: 'School', placeholder: '— select school —', type: 'select', optionsKey: 'schools', optionValue: 'school_name', optionLabel: 'school_name', addAny: true },
+      { key: 'date', label: 'Date', placeholder: 'YYYY-MM-DD', type: 'date' },
+      { key: 'start', label: 'Start time', placeholder: 'HH:MM', type: 'time' },
+      { key: 'end', label: 'End time', placeholder: 'HH:MM', type: 'time' },
     ],
-    build: (vals) => `Create a ${vals.course_name} lesson at ${vals.school_name} on ${vals.date} at ${vals.start}-${vals.end}`,
+    build: (vals) => {
+      const course = vals.course_name || vals.course_name_typed
+      return `Create a ${course} lesson at ${vals.school_name} on ${vals.date} at ${vals.start}-${vals.end}`
+    },
   },
   {
     name: 'delete',
@@ -99,6 +102,8 @@ COMMANDS.forEach((c) => { EMPTY_VALS[c.name] = {}; c.fields.forEach((f) => { EMP
 export default function ChatPanel() {
   const [messages, setMessages] = useState(loadHistory)
   const [presets, setPresets]   = useState([])
+  const [courses, setCourses]   = useState([])
+  const [schools, setSchools]   = useState([])
   const [input, setInput]       = useState('')
   const [busy, setBusy]         = useState(false)
   const [executing, setExecuting] = useState(false)
@@ -111,12 +116,12 @@ export default function ChatPanel() {
     setCmdVals((prev) => ({ ...prev, [name]: { ...EMPTY_VALS[name] } }))
   }, [])
 
-  const toggleCmd = (name) => {
-    if (activeCmd === name) {
+  const toggleCmd = (cmd) => {
+    if (activeCmd === cmd) {
       setActiveCmd(null)
     } else {
-      setActiveCmd(name)
-      if (!cmdVals[name]) resetCmd(name)
+      setActiveCmd(cmd)
+      if (!cmdVals[cmd]) resetCmd(cmd)
     }
   }
 
@@ -137,6 +142,8 @@ export default function ChatPanel() {
   useEffect(() => { saveHistory(messages) }, [messages])
 
   useEffect(() => { getPresets().then(setPresets).catch(() => setPresets([])) }, [])
+  useEffect(() => { getCourses().then(setCourses).catch(() => setCourses([])) }, [])
+  useEffect(() => { getSchools().then(setSchools).catch(() => setSchools([])) }, [])
   useEffect(() => { scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight) }, [messages, busy])
 
   const ask = async (text) => {
@@ -237,12 +244,37 @@ export default function ChatPanel() {
                 </button>
                 {activeCmd === cmd.name && (
                   <div className="cmd-card__form">
-                    {cmd.fields.map((f) => (
-                      <input key={f.key} className="cmd-card__input" type="text"
-                        value={(cmdVals[cmd.name] || {})[f.key] || ''}
-                        onChange={(e) => setVal(cmd.name, f.key, e.target.value)}
-                        placeholder={f.placeholder} />
-                    ))}
+                    {cmd.fields.map((f) => {
+                      if (f.type === 'select') {
+                        const opts = f.optionsKey === 'courses' ? courses : f.optionsKey === 'schools' ? schools : []
+                        const val = (cmdVals[cmd.name] || {})[f.key] || ''
+                        return (
+                          <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <select className="cmd-card__input"
+                              value={val}
+                              onChange={(e) => setVal(cmd.name, f.key, e.target.value)}>
+                              <option value="">{f.placeholder}</option>
+                              {opts.map((o) => (
+                                <option key={o[f.optionValue]} value={o[f.optionLabel]}>{o[f.optionLabel]}</option>
+                              ))}
+                            </select>
+                            {f.addAny && !val && (
+                              <input className="cmd-card__input" type="text"
+                                value={(cmdVals[cmd.name] || {})[f.key + '_typed'] || ''}
+                                onChange={(e) => setVal(cmd.name, f.key + '_typed', e.target.value)}
+                                placeholder={`Or type new ${f.label.toLowerCase()}`} />
+                            )}
+                          </div>
+                        )
+                      }
+                      return (
+                        <input key={f.key} className="cmd-card__input"
+                          type={f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : 'text'}
+                          value={(cmdVals[cmd.name] || {})[f.key] || ''}
+                          onChange={(e) => setVal(cmd.name, f.key, e.target.value)}
+                          placeholder={f.placeholder} />
+                      )
+                    })}
                     <button className="btn btn--primary btn--sm cmd-card__send"
                       onClick={() => submitCmd(cmd)}
                       disabled={!cmd.fields.every((f) => !f.required || (cmdVals[cmd.name] || {})[f.key]?.trim())}>
