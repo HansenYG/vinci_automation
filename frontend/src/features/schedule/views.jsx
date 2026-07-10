@@ -15,10 +15,9 @@ export function MonthView({ lessons, anchor, onSelect, onDayClick }) {
           <div
             key={day.toISOString()}
             className={'month-cell' + (isSameMonth(day, anchor) ? '' : ' dim') + (isSameDay(day, today) ? ' today' : '')}
+            onClick={() => onDayClick?.(day)}
           >
-            <button className="month-cell__date" onClick={() => onDayClick?.(day)}>
-              {format(day, 'd')}
-            </button>
+            <span className="month-cell__date">{format(day, 'd')}</span>
             {dl.map((l) => <LessonChip key={l.id} lesson={l} onClick={onSelect} />)}
           </div>
         )
@@ -38,10 +37,9 @@ export function WeekView({ lessons, anchor, onSelect, onDayClick }) {
           <div
             key={day.toISOString()}
             className={'week-col' + (isSameDay(day, today) ? ' today' : '')}
+            onClick={() => onDayClick?.(day)}
           >
-            <button className="week-col__head" onClick={() => onDayClick?.(day)}>
-              {format(day, 'EEE')}<small>{format(day, 'd MMM')}</small>
-            </button>
+            <div className="week-col__head">{format(day, 'EEE')}<small>{format(day, 'd MMM')}</small></div>
             {dl.length
               ? dl.map((l) => <LessonChip key={l.id} lesson={l} onClick={onSelect} />)
               : <span className="muted" style={{ fontSize: 12 }}>—</span>}
