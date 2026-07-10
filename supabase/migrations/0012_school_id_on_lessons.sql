@@ -16,8 +16,8 @@ where l.course_id = c.course_id
   and (l.school_id is null or l.school_id = '');
 
 -- ── 3. Recreate the view so school_id uses the lesson-level value first ──
-drop view if exists public.urgent_news;
-drop view if exists public.lesson_schedule;
+drop view if exists public.urgent_news cascade;
+drop view if exists public.lesson_schedule cascade;
 
 create view public.lesson_schedule as
 select
@@ -40,7 +40,7 @@ select
     l.course_id,
     c.course_name,
     coalesce(l.school_id, c.school_id) as school_id,
-    coalesce(l.school_name, s.school_name) as school_name,
+    coalesce(s.school_name, l.school_name) as school_name,
     l.teacher_id               as assigned_teacher_id,
     t.teacher_name             as assigned_teacher_name,
     t.whatsapp_number          as assigned_teacher_phone,

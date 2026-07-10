@@ -57,19 +57,36 @@ def _do_create_lesson(db, body: LessonCreate):
     """Shared logic: dump, code-gen, insert, return the view row."""
     payload = body.model_dump(mode="json", exclude_none=True)
     course = repos.get_row(db, "courses", payload["course_id"]) if payload.get("course_id") else None
+    
+    # Auto-generate school_id if school_name is provided and course doesn't have one
+    if payload.get("school_name") and not payload.get("school_id"):
+        schools = repos.list_rows(db, "schools")
+        existing_school = next((s for s in schools if s["school_name"] == payload["school_name"]), None)
+        if existing_school:
+            payload["school_id"] = existing_school["school_id"]
+        else:
+            # Create new school with auto-generated school_id
+            new_school = repos.insert_row(db, "schools", {"school_name": payload["school_name"]})
+            if new_school:
+                payload["school_id"] = new_school["school_id"]
+    
+    # If no school_id provided at all but course has one, use course's school
+    if not payload.get("school_id") and course and course.get("school_id"):
+        payload["school_id"] = course["school_id"]
+    
     if not payload.get("lesson_id"):
         payload["lesson_id"] = codes.next_lesson_code(
             db, date=payload.get("date"), start_time=payload.get("start_time"),
             course_name=(course or {}).get("course_name"),
         )
-    # Resolve school_id and school_name from course → school when not provided
-    if not payload.get("school_id") and course and course.get("school_id"):
-        payload["school_id"] = course["school_id"]
+    
+    # Only resolve school_name from db if not provided in input
     if not payload.get("school_name") and course:
         schools = repos.list_rows(db, "schools")
         school = next((s for s in schools if s["school_id"] == course.get("school_id")), None)
         if school:
             payload["school_name"] = school["school_name"]
+    
     row = repos.insert_row(db, "lessons", payload)
     lesson_id = row.get("id") if row else None
     if not lesson_id:
@@ -213,7 +230,7 @@ def parse_and_create_lessons(
             start_time=start_time,
             end_time=end_time,
             course_id=course_id,
-            school_name=body.school_name or body.location,
+            school_name=body.school_name,
             lesson_material_link=body.lesson_material_link,
             max_tutors=body.max_tutors,
             lesson_income=body.lesson_income,
@@ -253,7 +270,16 @@ def get_lesson(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
 
 @router.patch("/{lesson_id}")
 def update_lesson(lesson_id: str, body: LessonUpdate, db: SyncPostgrestClient = Depends(get_db)):
-    updated = repos.update_row(db, "lessons", lesson_id, body.model_dump(mode="json", exclude_none=True))
+    payload = body.model_dump(mode="json", exclude_none=True)
+    
+    # Resolve school_name -> school_id when school is being set
+    if payload.get("school_name") and not payload.get("school_id"):
+        schools = repos.list_rows(db, "schools")
+        existing_school = next((s for s in schools if s["school_name"] == payload["school_name"]), None)
+        if existing_school:
+            payload["school_id"] = existing_school["school_id"]
+    
+    updated = repos.update_row(db, "lessons", lesson_id, payload)
     if not updated:
         raise HTTPException(404, "lesson not found")
     return repos.get_lesson_view(db, lesson_id)

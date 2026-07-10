@@ -41,16 +41,44 @@ def accepted_pool(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
 
 @router.post("/announce-lesson")
 def announce_lesson(body: AnnounceLessonRequest, db: SyncPostgrestClient = Depends(get_db)):
+    school_id = None
+    school_name = None
+
+    # Resolve course_id either from body.course_id or by matching body.course
+    course_id = body.course_id
+    course_name = body.course or ""
+    if not course_id and body.course:
+        rows = db.table("courses").select("*").ilike("course_name", f"%{body.course}%").limit(1).execute().data or []
+        if not rows:
+            rows = db.table("courses").select("*").eq("course_id", body.course).limit(1).execute().data or []
+        if rows:
+            course_id = rows[0]["course_id"]
+            course_name = rows[0].get("course_name") or body.course
+    
+    if body.school:
+        schools = repos.list_rows(db, "schools")
+        school = next((s for s in schools if s["school_name"] == body.school), None)
+        if school:
+            school_id = school["school_id"]
+            school_name = school["school_name"]
+        else:
+            new_school = repos.insert_row(db, "schools", {"school_name": body.school})
+            if new_school:
+                school_id = new_school["school_id"]
+                school_name = new_school["school_name"]
+    
     return scheduling.announce_lesson(
         db,
         lesson_code=body.lesson_code,
         date=body.date,
         start_time=body.start_time,
         end_time=body.end_time,
-        course=body.course,
-        school=body.school,
+        course=course_name,
+        course_id=course_id,
+        school=school_name,
         max_tutors=body.max_tutors,
         lesson_income=body.lesson_income,
+        school_id=school_id,
     )
 
 

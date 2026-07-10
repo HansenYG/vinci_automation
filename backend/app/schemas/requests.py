@@ -123,6 +123,7 @@ class AnnounceLessonRequest(BaseModel):
     start_time: str | None = None
     end_time: str | None = None
     course: str | None = None   # course name (resolved to a course_id if it matches one)
+    course_id: str | None = None  # course_id (takes precedence over course name)
     school: str | None = None   # school name (context for matching + the WhatsApp message)
     max_tutors: int = 1         # max tutors that can be assigned to this lesson
     lesson_income: float | None = None
