@@ -98,18 +98,22 @@ def _soonest(views: list[dict]) -> dict | None:
 @router.post("/webhooks/wati")
 async def wati_webhook(
     request: Request,
+    secret: str = "",
     authorization: str = Header(default=""),
     db: SyncPostgrestClient = Depends(get_supabase),
 ):
-    # Helper to log with consistent prefix
     _req_id = secrets.token_hex(4)
 
     try:
-        # 1. Auth check
+        # 1. Auth check — accept via query param (?secret=...) since WATI
+        #    doesn't support custom headers, or via Authorization header.
         if settings.WATI_WEBHOOK_SECRET:
-            expected = f"Bearer {settings.WATI_WEBHOOK_SECRET}"
-            if not secrets.compare_digest(authorization.strip(), expected):
-                logger.warning("[%s] bad webhook token (got auth=%s)", _req_id, authorization[:40])
+            expected_bearer = f"Bearer {settings.WATI_WEBHOOK_SECRET}"
+            header_ok = secrets.compare_digest(authorization.strip(), expected_bearer)
+            param_ok = secrets.compare_digest(secret.strip(), settings.WATI_WEBHOOK_SECRET)
+            if not header_ok and not param_ok:
+                logger.warning("[%s] bad webhook token (header=%s..., param=%s...)",
+                               _req_id, authorization[:30], secret[:10])
                 raise HTTPException(status_code=403, detail="bad token")
 
         # 2. Parse payload
