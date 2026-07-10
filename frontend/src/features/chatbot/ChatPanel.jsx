@@ -97,7 +97,7 @@ function saveHistory(msgs) {
 }
 
 const EMPTY_VALS = {}
-COMMANDS.forEach((c) => { EMPTY_VALS[c.name] = {}; c.fields.forEach((f) => { EMPTY_VALS[c.name][f.key] = '' }) })
+COMMANDS.forEach((c) => { EMPTY_VALS[c.name] = {}; c.fields.forEach((f) => { EMPTY_VALS[c.name][f.key] = f.type === 'time' ? '00:00' : '' }) })
 
 export default function ChatPanel() {
   const [messages, setMessages] = useState(loadHistory)
