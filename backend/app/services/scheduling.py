@@ -149,6 +149,13 @@ def run_due_reminders(db: Client) -> dict:
 def record_acceptance(db: Client, lesson_id: str, teacher_id: str) -> dict:
     repos.set_offer_status(db, lesson_id, teacher_id, "accepted", responded_at=_iso_now())
     repos.log_event(db, lesson_id, teacher_id, "accept", {})
+    # Bump the lesson's raw status so the Dashboard shows it as "Has Acceptance"
+    # instead of "Unassigned" — this makes the Assign button visible.
+    lesson = repos.get_lesson_view(db, lesson_id)
+    if lesson:
+        raw = (lesson.get("raw_status") or "").lower()
+        if raw in ("unassigned", "offersent", ""):
+            repos.update_row(db, "lessons", lesson_id, {"status": "HasAcceptance"})
     return {"lesson_id": lesson_id, "teacher_id": teacher_id, "offer_status": "accepted"}
 
 
