@@ -18,12 +18,14 @@ class SchoolCreate(BaseModel):
     school_name: str | None = None
     tutor_availability_submissions: str | None = None
     tutor_availability_slots: str | None = None
+    google_maps_link: str | None = None
 
 
 class SchoolUpdate(BaseModel):
     school_name: str | None = None
     tutor_availability_submissions: str | None = None
     tutor_availability_slots: str | None = None
+    google_maps_link: str | None = None
 
 
 # --- Teachers (PK: teacher_id — generated when omitted) -------------------

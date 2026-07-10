@@ -339,6 +339,8 @@ def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, cour
         payload["end_time"] = end_time
     if course_id:
         payload["course_id"] = course_id
+    if school:
+        payload["school_name"] = school
     if lesson_income is not None:
         payload["lesson_income"] = lesson_income
 

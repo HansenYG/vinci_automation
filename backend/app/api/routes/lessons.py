@@ -56,12 +56,18 @@ def list_unassigned(limit: int = 100, db: SyncPostgrestClient = Depends(get_db))
 def _do_create_lesson(db, body: LessonCreate):
     """Shared logic: dump, code-gen, insert, return the view row."""
     payload = body.model_dump(mode="json", exclude_none=True)
+    course = repos.get_row(db, "courses", payload["course_id"]) if payload.get("course_id") else None
     if not payload.get("lesson_id"):
-        course = repos.get_row(db, "courses", payload["course_id"]) if payload.get("course_id") else None
         payload["lesson_id"] = codes.next_lesson_code(
             db, date=payload.get("date"), start_time=payload.get("start_time"),
             course_name=(course or {}).get("course_name"),
         )
+    # Resolve school_name from course → school when not explicitly provided
+    if not payload.get("school_name") and course:
+        schools = repos.list_rows(db, "schools")
+        school = next((s for s in schools if s["school_id"] == course.get("school_id")), None)
+        if school:
+            payload["school_name"] = school["school_name"]
     row = repos.insert_row(db, "lessons", payload)
     lesson_id = row.get("id") if row else None
     if not lesson_id:
@@ -99,6 +105,7 @@ class MultiLessonInput(BaseModel):
     default_start_time: str = "14:30"
     default_end_time: str = "17:00"
     location: str | None = None
+    school_name: str | None = None
     lesson_material_link: str | None = None
     max_tutors: int = 1
     lesson_income: float | None = None
@@ -204,6 +211,7 @@ def parse_and_create_lessons(
             start_time=start_time,
             end_time=end_time,
             course_id=course_id,
+            school_name=body.school_name or body.location,
             lesson_material_link=body.lesson_material_link,
             max_tutors=body.max_tutors,
             lesson_income=body.lesson_income,
