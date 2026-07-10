@@ -82,6 +82,7 @@ class LessonCreate(BaseModel):
     teacher_id: str | None = None
     status: str | None = "Unassigned"
     role: str | None = None
+    school_id: str | None = None
     school_name: str | None = None
     tutor_assignment: str | None = None
     lesson_material_link: str | None = None
@@ -100,6 +101,7 @@ class LessonUpdate(BaseModel):
     status: str | None = None
     role: str | None = None
     tutor_assignment: str | None = None
+    school_id: str | None = None
     school_name: str | None = None
     lesson_material_link: str | None = None
     max_tutors: int | None = None

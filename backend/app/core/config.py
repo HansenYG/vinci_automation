@@ -58,14 +58,13 @@ class Settings(BaseSettings):
     AIRTABLE_LESSONS_TABLE: str = "Lessons"
 
     # --- LLM for the chatbot ---------------------------------------------
-    # provider = "openai" (OpenAI-compatible, default) or "ollama" (local dev)
-    # For production, set LLM_PROVIDER=openai, LLM_API_KEY=<openrouter key>,
-    # LLM_BASE_URL=https://openrouter.ai/api/v1, LLM_MODEL=meta-llama/llama-3.1-8b-instruct
-    LLM_PROVIDER: str = "openai"
+    # provider = "openai" (OpenAI-compatible, default), "ollama" (local dev), or "groq" (fast)
+    # For production, set LLM_PROVIDER=groq for fastest responses
+    LLM_PROVIDER: str = "groq"
     LLM_API_KEY: str = ""                # required for openai-compatible providers
     LLM_BASE_URL: str = ""               # default depends on provider (see below)
     LLM_MODEL: str = ""                  # default depends on provider (see below)
-    LLM_TIMEOUT_SECONDS: int = 60
+    LLM_TIMEOUT_SECONDS: int = 30
 
     @property
     def llm_base_url(self) -> str:
@@ -74,7 +73,8 @@ class Settings(BaseSettings):
         return {
             "ollama": "http://localhost:11434",
             "openai": "https://openrouter.ai/api/v1",
-        }.get(self.LLM_PROVIDER, "https://openrouter.ai/api/v1")
+            "groq": "https://api.groq.com/openai/v1",
+        }.get(self.LLM_PROVIDER, "https://api.groq.com/openai/v1")
 
     @property
     def llm_model(self) -> str:
@@ -83,7 +83,8 @@ class Settings(BaseSettings):
         return {
             "ollama": "llama3.1",
             "openai": "meta-llama/llama-3.1-8b-instruct",
-        }.get(self.LLM_PROVIDER, "meta-llama/llama-3.1-8b-instruct")
+            "groq": "llama-3.1-8b-instant",
+        }.get(self.LLM_PROVIDER, "llama-3.1-8b-instant")
 
     # --- In-process scheduler (reminders / re-blast) ----------------------
     # Off by default. On Render, prefer a Cron Job hitting the trigger
