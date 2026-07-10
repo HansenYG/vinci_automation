@@ -34,15 +34,22 @@ def _extract_text(payload: dict) -> str:
         if isinstance(v, str):
             return v
         if isinstance(v, dict):
-            return str(v.get("body") or v.get("text") or "")
+            return str(v.get("body") or v.get("text") or v.get("title") or "")
         return str(v) if v else ""
+    # Try every known WATI webhook field for the user's reply text
+    for btn_key in ("buttonReply", "interactiveButtonReply"):
+        btn = payload.get(btn_key) or {}
+        for field in ("text", "title", "id"):
+            val = _val(btn.get(field))
+            if val:
+                return val
     return (
         _val(payload.get("text"))
-        or _val((payload.get("buttonReply") or {}).get("text"))
-        or _val((payload.get("interactiveButtonReply") or {}).get("text"))
         or _val((payload.get("listReply") or {}).get("title"))
         or _val((payload.get("message") or {}).get("text"))
+        or _val((payload.get("message") or {}).get("body"))
         or (payload.get("msg") or {}).get("body", "")
+        or _val(payload.get("body"))
         or ""
     ).strip()
 
@@ -60,10 +67,16 @@ def _classify(text: str) -> str | None:
     scores = Counter()
     for intent, keywords in INTENT_KEYWORDS.items():
         for kw in keywords:
-            # Match whole words or exact phrases using word boundaries
-            pattern = r'\b' + re.escape(kw) + r'\b'
-            if re.search(pattern, low):
-                scores[intent] += 1
+            # Use \b word boundaries only for ASCII keywords; non-ASCII
+            # (Chinese characters) don't match \b in Python's re, so fall
+            # back to a simple substring check for those.
+            if kw.isascii():
+                pattern = r'\b' + re.escape(kw) + r'\b'
+                if re.search(pattern, low):
+                    scores[intent] += 1
+            else:
+                if kw in low:
+                    scores[intent] += 1
     if not scores:
         return None
     # Deterministic tie-breaking: use stable sort order (accept, cancel, reschedule)

@@ -294,11 +294,16 @@ def teachers_by_phone(db: Client, phone: str) -> list[dict]:
     if rows:
         return rows
 
-    # Fallback: suffix match last 10 digits (handles country-code differences)
-    suffix = target[-10:]
-    if len(suffix) >= 8:
-        rows = db.table("teachers").select("*").ilike("whatsapp_number", f"%{suffix}").execute().data or []
-    return rows
+    # Fallback: fetch all teachers and do Python-level suffix matching.
+    # This handles mismatches like stored="12345678" vs WATI="85212345678"
+    # where a simple DB pattern can't match the shorter stored number.
+    all_teachers = repos.list_rows(db, "teachers")
+    matched = []
+    for t in all_teachers:
+        stored = _digits(t.get("whatsapp_number"))
+        if stored and (target.endswith(stored) or stored.endswith(target)):
+            matched.append(t)
+    return matched
 
 
 def find_teacher_by_phone(db: Client, phone: str) -> dict | None:
