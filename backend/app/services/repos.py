@@ -297,7 +297,7 @@ def teachers_by_phone(db: Client, phone: str) -> list[dict]:
     # Fallback: fetch all teachers and do Python-level suffix matching.
     # This handles mismatches like stored="12345678" vs WATI="85212345678"
     # where a simple DB pattern can't match the shorter stored number.
-    all_teachers = repos.list_rows(db, "teachers")
+    all_teachers = list_rows(db, "teachers")
     matched = []
     for t in all_teachers:
         stored = _digits(t.get("whatsapp_number"))
@@ -368,12 +368,10 @@ def accepted_teacher_ids(db: Client, lesson_id: str) -> list[str]:
 
 # --- audit log -------------------------------------------------------------
 
-def log_event(db: Client, lesson_id: str | None, teacher_id: str | None, event_type: str, school_id: str | None = None, detail: dict | None = None) -> None:
+def log_event(db: Client, lesson_id: str | None, teacher_id: str | None, event_type: str, detail: dict | None = None) -> None:
     import logging
     logger = logging.getLogger(__name__)
     payload = {"lesson_id": lesson_id, "teacher_id": teacher_id, "event_type": event_type, "detail": detail or {}}
-    if school_id:
-        payload["school_id"] = school_id
     try:
         db.table("lesson_events").insert(payload).execute()
     except Exception as exc:
