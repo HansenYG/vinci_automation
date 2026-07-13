@@ -1,10 +1,9 @@
 # Render blueprint for the Vinci Automation production backend.
-# Deploy: push to GitHub `production` branch; Render auto-deploys via this blueprint.
+# Deploy: push to GitHub `main` branch; Render auto-deploys via this blueprint.
 # Fill the `sync: false` secrets in the Render dashboard (never commit them).
 services:
   - type: web
     name: vinci-automation-api
-    branch: production
     runtime: python
     rootDir: backend
     plan: free
@@ -33,7 +32,7 @@ services:
       - key: ENABLE_SCHEDULER
         value: "false"
 
-  # Optional: fire the reminder / re-blast sweep once an hour.
+  # Fire the reminder / re-blast sweep once an hour.
   # Prefer this over ENABLE_SCHEDULER on Render's free web tier (which sleeps).
   - type: cron
     name: vinci-reminder-sweep
@@ -45,3 +44,15 @@ services:
         sync: false            # https://vinci-automation-api.onrender.com
       - key: TRIGGER_TOKEN
         sync: false            # same value as WATI_WEBHOOK_SECRET
+
+  # Archive stale unassigned lessons daily at midnight.
+  - type: cron
+    name: vinci-archive-stale
+    runtime: docker
+    schedule: "0 0 * * *"      # daily at midnight
+    dockerCommand: sh -c 'curl -fsS -X POST "$API_URL/api/scheduling/archive-stale?token=$TRIGGER_TOKEN"'
+    envVars:
+      - key: API_URL
+        sync: false
+      - key: TRIGGER_TOKEN
+        sync: false

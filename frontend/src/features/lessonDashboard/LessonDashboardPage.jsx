@@ -251,7 +251,7 @@ export default function LessonDashboardPage() {
 
           <select className="ld-filter-select" value={courseFilter} onChange={handleFilterChange(setCourseFilter)}>
             <option value="">All courses</option>
-            {courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
+            {Array.from(new Map(courses.map((c) => [c.course_name, c])).values()).map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
           </select>
 
           <select className="ld-filter-select" value={teacherFilter} onChange={handleFilterChange(setTeacherFilter)}>

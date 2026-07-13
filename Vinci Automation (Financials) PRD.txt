@@ -1,0 +1,25 @@
+Product Requirements Document (PRD):
+Vinci Automation (Financials)
+1. Vision & Core Philosophy
+ The Goal: A hub to represent all financial data (tutor salary & course financials) in an easy to understand format.
+ Core Principles:  Distinct Sections for Tutor Salary & Course Financials: Separate page into 2 sections,
+each focusing on one aspect to avoid confusion & mixing of data.  Simple Metrics Output: Metrics shown are optimized to show only what is necessary to
+reduce unnecessary clutter on the page which may cause inconvenience.  Monthly Update: Metrics shown on page are updated on the 1st of each month (for the
+data from the previous month) and previous months data is still stored & viewable, overall view will also be available.
+2. User Journey:
+ Context: User wants to check this month's tutor salary expenses (to pay tutor salary) & see the course financials (to see which courses are underperforming).
+ The Journey: 1. The user opens the financials page and sees the tutors salary section first. 2. Tutor salary section is separated into separate rows separated by a line with the total
+salary showing first after the tutor name & contact. 3. Users can scroll down to see all tutor salaries. 4. Under tutor salaries, the user can see the course financials section. For this after the
+course name, the first thing shown is the profit margin in % and also HKD (more complete info is provided as well such as total income and expenses).
+3. Core Functional Requirements
+3.1 Simple, All you Need to Know Information Representation
+ Data Presentation: The data shown from left to right will be from most relevant/important to least relevant so if the user doesn't have to do tedious searching.
+ Data Rules: Users can only read the data and cannot do any modifications to it to avoid data manipulation or any input errors.
+3.2 Complete Data Storage
+ Default View: The default data viewed when the user opens the page will be the data from the most recent month.
+
+ Other Views: Users can still view data from previous months (from a dropdown menu) or the overall data from all months up until the most recent one (from a button).
+4. Delivery Boundaries
+ Read only financial data hub for users to know tutor earnings and also course financials of the most recent month, past months, and overall.
+
+

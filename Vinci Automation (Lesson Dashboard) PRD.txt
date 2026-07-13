@@ -1,0 +1,24 @@
+Product Requirements Document (PRD):
+Vinci Automation (Lesson Dashboard)
+1. Vision & Core Philosophy
+ The Goal: Page for the user to view all unassigned lessons & do manual assignment when necessary.
+ Core Principles:  Lesson Status Synchronization: Lessons updated by tutor manual assignment will be
+synchronized to the lesson in the schedule through direct update through the database.  Importance Sorting: Lessons will be sorted from the closest to the current date to the
+farthest away.
+2. User Journey:
+ Context: Jay wants to check the unassigned lessons & manually assign tutors to those that are within a week.
+ The Journey: 1. Jay opens the Lesson Dashboard page and will see multiple rows of lessons. 2. These rows will start with lesson ID (far left), then course name, and then date & time, the
+rows of lessons are also sorted to show the lessons to the closest date first. 3. Jay clicks on a button labeled "assign tutor" on the far right for the lesson on the first
+row, and a slideout page appears and shows all the tutors that have accepted the offer through whatsapp responses. 4. Tutors shown are sorted from highest score to lowest score. Jay chooses the appropriate tutors for the lesson. 5. Jay does this for all lessons within a week.
+3. Core Functional Requirements
+3.1 Lesson Data Synchronization
+ Data Updating: Any changes done (manual tutor assignment, etc) will be updated directly in the database, & if the appropriate amount of tutors are already selected, then the corresponding lesson won't appear in this page.
+ Data Clashes: Suppose a lesson with an assigned tutor appears on this page, if the admin tries to re-assign a different tutor a warning pop-up will appear, however if the admin tries to assign the same tutor twice then an error message will appear.
+3.2 Lesson Urgency Sorting
+ Sorting Logic: Lessons with no tutors accepted first will be shown, then lessons with
+
+tutors accepted but with no selected tutors. Both of these will be sorted from the date that is closest to the day to the farthest date from the current day.
+4. Delivery Boundaries
+ A lesson dashboard which primarily displays lessons that requires the admin's attention and action (no assigned tutors).
+
+

@@ -58,7 +58,7 @@ exfiltration risk. Role-gating is applied on the frontend (admin role required).
 **Security note:** For full httpOnly cookie protection, implement a
 token-exchange endpoint on the FastAPI backend.
 
-**Test credentials:** `hansenyg@vinciai.academy` / `VinciBeta2026!`
+<!-- SECURITY: Test credentials removed from public docs. Share via secure channel only. -->
 
 ## Quick start (local)
 

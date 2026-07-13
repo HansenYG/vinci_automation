@@ -20,6 +20,7 @@ import re
 from datetime import date, datetime
 from functools import lru_cache
 import hashlib
+from zoneinfo import ZoneInfo
 
 from app.services import codes, repos
 
@@ -43,6 +44,14 @@ PRESETS = [
     {"id": "export_lessons", "label": "Export lessons to Excel", "prompt": "Export all lessons to excel", "action": "export", "dataset": "lessons"},
 ]
 
+
+def _tz_now() -> datetime:
+    """Current datetime in configured timezone."""
+    return datetime.now(ZoneInfo(settings.TIMEZONE))
+
+def _tz_today() -> date:
+    """Current date in configured timezone."""
+    return _tz_now().date()
 
 def _counts(db: Client) -> dict[str, int]:
     return {
@@ -84,7 +93,7 @@ def _deterministic_answer(db: Client, message: str) -> dict | None:
         return {"reply": reply, "source": "db", "data": rows}
 
     if "today" in m:
-        today = date.today().isoformat()
+        today = _tz_today().isoformat()
         rows = repos.list_schedule(db, today, today)
         lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
         reply = f"{len(rows)} lesson(s) today:\n" + "\n".join(lines) if rows else "No lessons scheduled today."
@@ -165,7 +174,7 @@ def _llm_chat(
 
 def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     """Free-form answer via LLM, grounded with a live DB snapshot."""
-    now = datetime.now()
+    now = _tz_now()
     today = now.date().isoformat()
     day_name = now.strftime("%A")   # e.g. "Wednesday"
     counts = _counts(db)

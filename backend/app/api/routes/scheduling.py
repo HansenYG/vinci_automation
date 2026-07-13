@@ -16,6 +16,20 @@ from app.services import repos, scheduling, wati
 router = APIRouter(prefix="/scheduling", tags=["scheduling"])
 
 
+@router.post("/archive-stale")
+def archive_stale(token: str = Query(default=""), db: SyncPostgrestClient = Depends(get_supabase)):
+    """Archive unassigned lessons past due (cron job or manual trigger)."""
+    if settings.WATI_WEBHOOK_SECRET and token != settings.WATI_WEBHOOK_SECRET:
+        raise HTTPException(403, "bad token")
+    try:
+        result = db.rpc("archive_stale_unassigned", {"max_age_days": 30}).execute()
+        count = result.data if hasattr(result, 'data') else result
+        archived = count[0] if isinstance(count, list) else count
+    except Exception as exc:
+        raise HTTPException(500, f"archive failed: {exc}")
+    return {"archived": int(str(archived or 0)), "max_age_days": 30}
+
+
 @router.post("/lessons/{lesson_id}/blast")
 def blast(lesson_id: str, db: SyncPostgrestClient = Depends(get_db)):
     try:
