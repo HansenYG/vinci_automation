@@ -82,7 +82,7 @@ def _extract_text(payload: dict) -> str:
 
 
 INTENT_KEYWORDS = {
-    "accept": ["Accept"],
+    "accept": ["Accept", "accept"],
     "cancel": ["cancel", "Cancel", "can't make", "cannot make", "unavailable", "Unavailable", "can't attend", "取消", "不能"],
     "reschedule": ["reschedule", "Reschedule", "change date", "move", "different time", "another day", "改期", "改時間"],
 }
