@@ -126,6 +126,9 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
   const maxTutors     = lesson.max_tutors ?? 1
   const full          = assignedCount >= maxTutors
   const statusMeta    = getStatusMeta(lesson.status || lesson.color)
+  const assignedTutors = offers
+    .filter((o) => o.offer_status === 'assigned')
+    .map((o) => o.teacher?.teacher_name || o.teacher_id)
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   const flash = (t, type = 'info') => {
@@ -312,8 +315,11 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
               </div>
             </div>
             
-            <Field label="Assigned tutor" value={lesson.assigned_teacher_name || 'Unassigned'} />
-            <Field label="Tutors"         value={`${assignedCount} / ${maxTutors}`} />
+            <Field
+              label={assignedTutors.length > 1 ? 'Assigned tutors' : 'Assigned tutor'}
+              value={assignedTutors.length > 0 ? assignedTutors.join(', ') : 'Unassigned'}
+            />
+            <Field label="Tutors" value={`${assignedCount} / ${maxTutors}`} />
             <Field label="Lesson income (HKD)" value={lesson.lesson_income != null ? `$${Number(lesson.lesson_income).toFixed(2)}` : '—'} />
             <Field label="Within a week"  value={lesson.within_a_week ? 'Yes ⚠️' : 'No'} />
           </div>
