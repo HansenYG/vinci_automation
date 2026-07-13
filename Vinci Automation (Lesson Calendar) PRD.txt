@@ -1,0 +1,25 @@
+Product Requirements Document (PRD):
+Vinci Automation (Lesson Calendar)
+1. Vision & Core Philosophy
+ The Goal: Easy & readable calendar interface which shows all lessons scheduled along with their statuses.
+ Core Principles:  Color Coded Statuses: Vibrant & clear colors show the status of each lesson (based on
+tutor assignment) for quick status updates for admin.  Clickable Lessons: Admin can click each lesson on the calendar & it will expand and
+view specific details for that lesson and some actions (such as assigning tutors manually if needed)
+2. User Journey:
+ Context: Jay wants to check up on lessons today, this week, and this month.  The Journey: 1. Jay opens up the lesson calendar page and choses "Day" setting and clicks on the
+"Today" button. 2. A view with 2 bars (both colored green) with the time & course name for that lesson
+appears. 3. Jay clicks on both to check on who's teaching & to view additional data for each lesson.
+A slideout page slides out from the right side and all this data is viewed. 4. Jay opens up the weekly view, and a similar interface is seen, only with seven distinct
+sections (each representing a day) marked with the day with a line separating each. He does the same checking for lessons. 5. Jay opens up the monthly view, and a similar interface is seen, only with 30/31/28 (depending on month) distinct boxes (each representing a day) marked with the date and each box having the same bars with the course name and time of the lesson.
+3. Core Functional Requirements
+3.1 Easy Status Checking
+ Intuitive Color Coding:  Red: Lessons without a tutor assigned & within a week of the current day.  Yellow: Lessons without a tutor assigned & not within a week of the current day.  Green: Lessons with a tutor assigned.
+3.2 Detailed Lesson View
+
+ Clear Data View Fields: The subsection that slides out will have all relevant lesson data easily viewable to admin with the following fields:  School  Date & Time  Assigned tutor (or tutor's)  Number of tutors  Lesson Income (modifiable for adjustments)  Lesson Material Link (modifiable for adjustments)
+ Quick Action Buttons: Provides admin with 2 button options, "Send Whatsapp New Lesson Assignment" (will be greyed out for lessons with enough tutors accepted) and "Send Material & Reminder to Chosen Tutors" which acts as a reminder and file sharing method for chosen tutors (will be sent at least once automatically, admin has the choice to do it manually again just in case).
+ Read Only for core lesson data: Schedule is mainly for viewing & not for modifying scheduled lesson fields (to avoid accidental changes) & to reduce potential sources of discrepancies from input changes.
+4. Delivery Boundaries
+ Read only (mostly) calendar interface with multiple duration settings & clickable lessons to view even more specific lesson data.
+
+

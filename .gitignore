@@ -21,3 +21,6 @@ dist-ssr/
 # Python cache
 __pycache__/
 *.py[cod]
+backend/nul
+nul
+backend/nul

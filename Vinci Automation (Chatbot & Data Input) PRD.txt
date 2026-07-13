@@ -1,0 +1,31 @@
+Product Requirements Document (PRD):
+Vinci Automation (Chatbot & Data Input)
+1. Vision & Core Philosophy
+ The Goal: To provide easy scheduling & data inputs along with convenient changes to lesson schedule & easy access to readable data summaries.
+ Core Principles:  Instant Assignment & Status Updates: Any changes to scheduled classes done by the
+operations manager will be updated instantly & a notification will be sent out.  Chatbot Integration: A chatbot will be provided for quick access to summarize data or
+do quick modifications to scheduled classes.
+2. User Journey: Admin New Class Assignment & Using Chatbot
+2.1 New Class Assignment
+ Context: Jay wants to schedule a new lesson for a school.  The Journey: 1. Jay opens up the data input page and sees 4 tabs on top of the subpage. 2. He selects the "Lesson" tab to input a new scheduled lesson. He will see multiple input
+fields (date, time, course, school, number of tutors needed, income) for input. 3. He inputs all fields and clicks submit. The new scheduled lesson will be added into the
+lesson calendar view with the color yellow (if scheduled more than a week away) or red (if within a week). 4. Jay waits for at least 24h before looking whether tutors have accepted the offer (done through automated whatsapp messages). 5. He chooses appropriate tutors based on score or any other preference manually once the pool of tutors who have accepted is sufficient. 6. Lessons on the calendar view will turn dark green indicating a tutor has been assigned.
+2.2 Using Chatbot
+ Context: Jay wants to get summarized data on lessons and reschedule a lesson.  The Journey:
+1. Jay asks directly on chatbot interface for the summary of all lessons this week, it returns a clean output of all lessons this week & their respective statuses.
+2. Jay sees a lesson that needs to be rescheduled, so he asks the chatbot to change the date on that lesson, the AI updates it and returns the changes it made to Jay through
+
+the chat interface.
+3. Core Functional Requirements
+3.1 Simple & Easy Data Input
+ Clear Input Fields: Each section (lessons, courses, teachers, schools) has their own fields in a textbox input view with all inputs being mandatory.
+ Data Input Field Types: Data inputs will be text only and no inputs from image can be done to ensure accuracy of inputs. ID's for each input field will also be generated based on input from a fixed template.
+3.2 Instant Status & Data Updates
+ Live Change Updates: Any changes made to assigned lessons (through chatbot or manually assigning tutors) will update the database directly & will affect the view and status for each lesson.
+3.3 Chatbot
+ Chatbot Scope: Chatbot cannot make new input fields into the database or delete existing data, it can only modify existing data (such as for rescheduling) and read to summarize data.
+4. Delivery Boundaries
+ Functional chatbot for summarizing data into readable formats & to do modifications on pre-existing data (such as lessons, etc).
+ Data input section with clear input fields which acts as the only source of new data input.
+
+

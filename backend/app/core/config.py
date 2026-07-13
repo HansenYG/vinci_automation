@@ -9,7 +9,9 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
 
     # Comma-separated list of origins allowed to call the API (CORS).
-    CORS_ORIGINS: str = "http://localhost:5173"
+    # In production, set to the actual Vercel frontend domain.
+    # Default allows local dev + production frontend.
+    CORS_ORIGINS: str = "http://localhost:5173,https://vinci-automation.vercel.app"
 
     # --- Supabase Auth (Phase 1) ------------------------------------------
     # The frontend authenticates users with Supabase Auth (Google OAuth or
@@ -28,8 +30,10 @@ class Settings(BaseSettings):
     # SUPABASE_URL must be set in .env (no default — fail fast if missing).
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
-    # Public anon key used by Supabase Auth API calls (safe to embed).
-    SUPABASE_ANON_KEY: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppZ3pnenVybXVwbGdjcXNubmx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzUyMjIsImV4cCI6MjA5ODM1MTIyMn0.cGkHBdME80jDYDGRV_IBcGVp0k7IyCzxWSZOLqsZcIQ"
+    # Public anon key used by Supabase Auth API calls (safe to embed in frontend,
+    # but should be env-configurable for different environments).
+    # TODO: Move to env var SUPABASE_ANON_KEY with this as the fallback default.
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppZ3pnenVybXVwbGdjcXNubmx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzUyMjIsImV4cCI6MjA5ODM1MTIyMn0.cGkHBdME80jDYDGRV_IBcGVp0k7IyCzxWSZOLqsZcIQ")
 
     # --- WATI (WhatsApp) --------------------------------------------------
     # ENDPOINT_BASE includes the tenant id, e.g. https://live-mt-server.wati.io/111307
@@ -50,6 +54,7 @@ class Settings(BaseSettings):
     # --- Business rules (ported from the Apps Scripts) --------------------
     URGENT_WINDOW_DAYS: int = 7          # within this many days => "urgent" / red
     REBLAST_INTERVAL_HOURS: int = 24     # re-blast the pool at most once per day
+    TIMEZONE: str = "Asia/Hong_Kong"     # server timezone for date references
 
     # --- Airtable (optional one-time migration of legacy tutor data) ------
     AIRTABLE_API_KEY: str = ""

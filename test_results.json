@@ -1,0 +1,152 @@
+[
+  {
+    "test": "Supabase Signup",
+    "status": "PASS",
+    "details": "User already registered (expected)",
+    "timestamp": "2026-07-09T15:31:31.532639"
+  },
+  {
+    "test": "Supabase Login",
+    "status": "PASS",
+    "details": "Logged in as hansenyg@vinciai.academy",
+    "timestamp": "2026-07-09T15:31:31.653866"
+  },
+  {
+    "test": "Backend /api/auth/me",
+    "status": "PASS",
+    "details": "Role: Admin, Authorized: True",
+    "timestamp": "2026-07-09T15:31:33.708515"
+  },
+  {
+    "test": "Schedule - List Lessons",
+    "status": "PASS",
+    "details": "Retrieved 30 lessons for current month",
+    "timestamp": "2026-07-09T15:31:36.029877"
+  },
+  {
+    "test": "Dashboard - List Lessons",
+    "status": "PASS",
+    "details": "Retrieved 0 lessons",
+    "timestamp": "2026-07-09T15:31:38.434631"
+  },
+  {
+    "test": "Dashboard - Filter by Status",
+    "status": "PASS",
+    "details": "Retrieved 0 unassigned lessons",
+    "timestamp": "2026-07-09T15:31:40.780882"
+  },
+  {
+    "test": "Dashboard - Pagination",
+    "status": "PASS",
+    "details": "Pagination works correctly",
+    "timestamp": "2026-07-09T15:31:43.225273"
+  },
+  {
+    "test": "Quick Input - List Schools",
+    "status": "PASS",
+    "details": "Found 251 existing schools",
+    "timestamp": "2026-07-09T15:31:45.622998"
+  },
+  {
+    "test": "Quick Input - Create School",
+    "status": "PASS",
+    "details": "Created school: Test School 20260709153145",
+    "timestamp": "2026-07-09T15:31:48.063050"
+  },
+  {
+    "test": "Quick Input - List Teachers",
+    "status": "PASS",
+    "details": "Found 138 existing teachers",
+    "timestamp": "2026-07-09T15:31:50.470501"
+  },
+  {
+    "test": "Quick Input - Create Teacher",
+    "status": "PASS",
+    "details": "Created teacher: Test Teacher 20260709153150",
+    "timestamp": "2026-07-09T15:31:52.889901"
+  },
+  {
+    "test": "Quick Input - List Courses",
+    "status": "PASS",
+    "details": "Found 12 existing courses",
+    "timestamp": "2026-07-09T15:31:55.318903"
+  },
+  {
+    "test": "Quick Input - Create Course",
+    "status": "PASS",
+    "details": "Created course: Test Course 20260709153155",
+    "timestamp": "2026-07-09T15:31:57.598956"
+  },
+  {
+    "test": "Quick Input - List Lessons",
+    "status": "PASS",
+    "details": "Found 146 existing lessons",
+    "timestamp": "2026-07-09T15:32:00.017900"
+  },
+  {
+    "test": "Quick Input - Create Single Lesson",
+    "status": "PASS",
+    "details": "Created lesson: None",
+    "timestamp": "2026-07-09T15:32:02.438269"
+  },
+  {
+    "test": "Quick Input - Create Multi-Lesson",
+    "status": "PASS",
+    "details": "Created 3 lessons, Failed: 0",
+    "timestamp": "2026-07-09T15:32:04.923588"
+  },
+  {
+    "test": "Lesson Detail - Get Lesson",
+    "status": "PASS",
+    "details": "Retrieved lesson: LES-20260716-1430-TC2-2",
+    "timestamp": "2026-07-09T15:32:07.218916"
+  },
+  {
+    "test": "Lesson Detail - Edit Start Time",
+    "status": "PASS",
+    "details": "Updated start time to: 15:00:00",
+    "timestamp": "2026-07-09T15:32:09.489765"
+  },
+  {
+    "test": "Lesson Detail - Edit End Time",
+    "status": "PASS",
+    "details": "Updated end time to: 17:30:00",
+    "timestamp": "2026-07-09T15:32:11.829535"
+  },
+  {
+    "test": "Lesson Detail - Verify Sync",
+    "status": "PASS",
+    "details": "Changes synced to database correctly",
+    "timestamp": "2026-07-09T15:32:14.138197"
+  },
+  {
+    "test": "Chatbot - Query: 'show unassigned lessons'",
+    "status": "PASS",
+    "details": "Response received: {'reply': '50 unassigned lesson(s):\\n- LES-20250623-0930-B01 \u00b7 Advanced Robotics Workshop \u00b7 2025-06-...",
+    "timestamp": "2026-07-09T15:32:23.245360"
+  },
+  {
+    "test": "Chatbot - Query: 'today's schedule'",
+    "status": "PASS",
+    "details": "Response received: {'reply': 'No lessons scheduled today.', 'source': 'db', 'data': []}...",
+    "timestamp": "2026-07-09T15:32:29.922123"
+  },
+  {
+    "test": "Chatbot - Query: 'list all teachers'",
+    "status": "PASS",
+    "details": "Response received: {'reply': \"I can't reach the language model right now, but I can still answer operational questions ...",
+    "timestamp": "2026-07-09T15:32:36.635835"
+  },
+  {
+    "test": "Excel Export - Lessons",
+    "status": "PASS",
+    "details": "Exported successfully, Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "timestamp": "2026-07-09T15:32:38.913381"
+  },
+  {
+    "test": "Excel Export - Teachers",
+    "status": "PASS",
+    "details": "Exported successfully, Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "timestamp": "2026-07-09T15:32:41.244537"
+  }
+]

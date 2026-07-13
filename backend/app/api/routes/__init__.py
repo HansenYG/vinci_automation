@@ -40,3 +40,14 @@ api_router.include_router(urgent.router, dependencies=_auth)
 
 # Finances is Admin-only (Business Rules v1.2 s.12).
 api_router.include_router(finances.router, dependencies=[Depends(require_admin)])
+
+# SECURITY NOTE on service_role key usage:
+# - Routes using Depends(get_db) pass the user's JWT token to PostgREST,
+#   leveraging Row-Level Security (RLS) for authz.
+# - Routes using Depends(get_supabase) use the service_role key which
+#   bypasses RLS. Currently only used in:
+#     1. webhooks.py — WATI webhook (no user session)
+#     2. scheduling.py:run_due_reminders — cron job (no user session)
+#     3. auth.py — user profile lookup (needed before user is resolved)
+# - When adding new routes, prefer get_db over get_supabase unless
+#   there is a documented reason why service_role access is required.

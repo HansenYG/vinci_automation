@@ -1,0 +1,21 @@
+Product Requirements Document (PRD):
+Vinci Automation (Urgent)
+1. Vision & Core Philosophy
+ The Goal: Page for which all things that require the operation manager's immediate attention & action are shown so they can handle it quickly.
+ Core Principles:  Data Update Synchronization: Any changes made by the admin will be done directly to
+the database & will subsequently be treated as the most recent version and kept.  Immediate Urgent Situations Updates: Will update on urgent situations (tutor
+cancellation/reschedule from whatsapp replies) & any other anomalous situations (missing data, etc) immediately, and a clear red notification will appear with the number of issues detected for the admin to see and handle.
+2. User Journey:
+ Context: Jay gets a notification on an urgent situation he must handle immediately, checks what's the problem, and handles it promptly.
+ The Journey: 1. Jay sees a red notification bubble with a number in it on the top right of the "Urgent"
+page icon. 2. Jay clicks on the urgent page, sees a section with the title being the problem & a short
+brief of what the problem is about and how to fix/minimize it, in this case a tutor has requested to cancel his/her assignment to a lesson. 3. Jay in this case, re-assigns another tutor for the lesson and the urgent situation is solved. 4. Jay scrolls down and sees some classes that are within this week, and they still have no tutors assigned as well, so he assigns them all.
+3. Core Functional Requirements
+3.1 Complete & Live Urgent Situation Updates
+ Comprehensive Urgent Situation Coverage: Urgent situations are categorized as follows:  Tutor cancellation.  Rescheduling conflicts (tutor becomes unavailable after a lesson is rescheduled).  Lessons with no assigned tutors or no tutor acceptances within a week.  Conflicting tutor schedules (2 classes on the same day & time) Missing data or data conflicts
+
+ Immediate Situation Updates: There will be systems in place in the backend to automatically scan for whatsapp cancellation messages or any scheduling conflicts if any lesson schedules have changed. Data audits will also be done regularly to ensure secure & valid data.
+4. Delivery Boundaries
+ An urgent page where situations that require admin intervention are shown and where the admin can directly handle it then and there for convenience & efficiency.
+
+

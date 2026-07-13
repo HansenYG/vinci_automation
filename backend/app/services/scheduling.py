@@ -13,6 +13,7 @@ app.services.repos; everything is logged to lesson_events for traceability.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from postgrest import SyncPostgrestClient
@@ -172,6 +173,9 @@ def assign_tutor(
     """Assign an (accepted) tutor to a lesson and send the confirmation message
     carrying the lesson-material link.
 
+    Uses an atomic DB stored procedure (assign_tutor_atomic) with SELECT FOR UPDATE
+    to prevent race conditions when multiple admins assign simultaneously.
+
     Raises:
         ValueError: 'DUPLICATE' prefix — same tutor already assigned.
         ValueError: 'CLASH' prefix — different tutor already assigned and force_reassign=False.
@@ -184,65 +188,37 @@ def assign_tutor(
     if not lesson:
         raise ValueError(f"lesson {lesson_id} not found")
 
-    # Enforce the per-lesson tutor cap with atomic capacity check.
     max_t = max(1, int(lesson.get("max_tutors") or 1))
 
-    # Use a DB RPC function or atomic query pattern to ensure capacity check + insert
-    # happen atomically. Since Supabase doesn't expose SELECT FOR UPDATE directly,
-    # we implement a retry-with-fresh-count pattern as the best available mitigation.
-    # The upsert itself is atomic, but we need to verify capacity immediately after
-    # in a single transaction scope where possible.
-
-    # Pre-flight check (can still race, but catches obvious violations early)
-    offers = repos.get_offers(db, lesson_id)
-    assigned = [o for o in offers if o["offer_status"] == "assigned"]
-    already = any(o["teacher_id"] == teacher_id and o["offer_status"] == "assigned" for o in offers)
-
-    # Duplicate assignment — same tutor already assigned
-    if already:
-        raise ValueError("DUPLICATE: This tutor is already assigned to this lesson.")
-
-    # Clash — lesson already has a different assigned tutor and force_reassign not set
+    # Clash check (not covered by stored procedure)
     existing_teacher_id = lesson.get("assigned_teacher_id")
     if existing_teacher_id and existing_teacher_id != teacher_id and not force_reassign:
         existing_name = lesson.get("assigned_teacher_name", existing_teacher_id)
         raise ValueError(f"CLASH: This lesson already has an assigned tutor ({existing_name}). Confirm re-assignment to proceed.")
 
-    if not already and len(assigned) >= max_t:
-        raise ValueError(f"FULL: This lesson is full — {max_t} tutor(s) already assigned (max).")
+    # Atomic assignment via stored procedure (SELECT FOR UPDATE + capacity check)
+    try:
+        result = db.rpc("assign_tutor_atomic", {
+            "p_lesson_id": lesson_id,
+            "p_teacher_id": teacher_id,
+            "p_max_tutors": max_t,
+        }).execute()
+        raw = result.data if hasattr(result, 'data') else result
+    except Exception as exc:
+        raise ValueError(f"DB error during atomic assignment: {exc}")
 
-    # Atomic insert: upsert the offer with "assigned" status
-    repos.upsert_offer(db, lesson_id, teacher_id, offer_status="assigned", responded_at=_iso_now())
-
-    # CRITICAL: Immediately re-check capacity atomically by fetching fresh count
-    # within the same transaction context. This is the authoritative check.
-    # Since Supabase doesn't support explicit transactions, we fetch fresh state
-    # immediately and rollback (by setting to withdrawn) if over capacity.
-    post_offers = repos.get_offers(db, lesson_id)
-    post_count = sum(1 for o in post_offers if o["offer_status"] == "assigned")
-
-    # If we're over capacity, this assignment loses (last writer loses)
-    # This isn't fully race-free but is the best we can do without DB-level locking
-    # or a stored procedure that enforces capacity in a single atomic operation.
-    if post_count > max_t:
-        repos.set_offer_status(db, lesson_id, teacher_id, "withdrawn", responded_at=_iso_now())
-        raise ValueError(f"FULL: This lesson is full — {max_t} tutor(s) already assigned (max).")
-
-    new_assigned_count = post_count
-
-    # Always set teacher_id to the newly assigned tutor (primary tutor drives schedule colour)
-    updates = {"tutor_assignment": "Tutor assigned", "teacher_id": teacher_id}
-
-    # Update lesson status to Assigned when the required number of tutors is met
-    if new_assigned_count >= max_t:
-        updates["status"] = "Assigned"
+    if isinstance(raw, (dict, list)):
+        data = raw[0] if isinstance(raw, list) else raw
     else:
-        current_status = (lesson.get("raw_status") or "").lower()
-        if current_status not in ("assigned", "completed", "cancelled", "rescheduled"):
-            updates["status"] = "HasAcceptance"
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else raw
+        except (json.JSONDecodeError, TypeError):
+            raise ValueError(f"Unexpected RPC response: {raw}")
 
-    repos.update_row(db, "lessons", lesson_id, updates)
-    repos.log_event(db, lesson_id, teacher_id, "assign", {"force_reassign": force_reassign})
+    if not data.get("success", False):
+        raise ValueError(data.get("message", "Assignment failed"))
+
+    repos.log_event(db, lesson_id, teacher_id, "assign", {"force_reassign": force_reassign, "method": "atomic_rpc"})
 
     result: dict | None = None
     if send_files:
@@ -253,11 +229,13 @@ def assign_tutor(
         event = "material_sent" if ctx.get("lesson_material_link") else "confirmation_sent"
         repos.log_event(db, lesson_id, teacher_id, event, {"ok": result["ok"]})
 
+    assigned_count = data.get("assigned_count", 1)
+    
     return {
         "lesson_id": lesson_id,
         "assigned_teacher_id": teacher_id,
-        "status": "assigned" if new_assigned_count >= max_t else "hasacceptance",
-        "assigned_count": new_assigned_count,
+        "status": "assigned" if assigned_count >= max_t else "hasacceptance",
+        "assigned_count": assigned_count,
         "max_tutors": max_t,
         "confirmation": result,
     }

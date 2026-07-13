@@ -4,6 +4,9 @@ Point your WATI webhook at:
     POST  https://<backend>/api/webhooks/wati
 With header:  Authorization: Bearer <WATI_WEBHOOK_SECRET>
 
+Authentication is via Authorization header only (no query-param fallback —
+query params leak in server logs and referrer headers).
+
 A typed tutor reply is classified into one intent:
   * "accept"     -> mark their soonest pending offer accepted
   * "cancel"     -> unassign their lesson, alert admin, re-blast the pool
@@ -78,9 +81,9 @@ def _extract_text(payload: dict) -> str:
 
 
 INTENT_KEYWORDS = {
-    "accept": ["accept", "yes", "i'll take it", "i will take", "i'll do it", "接受", "可以"],
-    "cancel": ["cancel", "can't make", "cannot make", "unavailable", "can't attend", "取消", "不能"],
-    "reschedule": ["reschedule", "change date", "move", "different time", "another day", "改期", "改時間"],
+    "accept": ["Accept"],
+    "cancel": ["cancel", "Cancel", "can't make", "cannot make", "unavailable", "Unavailable", "can't attend", "取消", "不能"],
+    "reschedule": ["reschedule", "Reschedule", "change date", "move", "different time", "another day", "改期", "改時間"],
 }
 
 
@@ -90,6 +93,7 @@ def _classify(text: str) -> str | None:
     scores = Counter()
     for intent, keywords in INTENT_KEYWORDS.items():
         for kw in keywords:
+            kw = kw.lower()
             if kw.isascii():
                 pattern = r'\b' + re.escape(kw) + r'\b'
                 if re.search(pattern, low):
@@ -119,22 +123,20 @@ def _soonest(views: list[dict]) -> dict | None:
 @router.post("/webhooks/wati")
 async def wati_webhook(
     request: Request,
-    secret: str = "",
     authorization: str = Header(default=""),
     db: SyncPostgrestClient = Depends(get_supabase),
 ):
     _req_id = secrets.token_hex(4)
 
     try:
-        # 1. Auth check — accept via query param (?secret=...) since WATI
-        #    doesn't support custom headers, or via Authorization header.
+        # 1. Auth check — Authorization header only. Query-param auth removed
+        #    for security (query params leak in server logs, referrer headers).
         if settings.WATI_WEBHOOK_SECRET:
             expected_bearer = f"Bearer {settings.WATI_WEBHOOK_SECRET}"
             header_ok = secrets.compare_digest(authorization.strip(), expected_bearer)
-            param_ok = secrets.compare_digest(secret.strip(), settings.WATI_WEBHOOK_SECRET)
-            if not header_ok and not param_ok:
-                logger.warning("[%s] bad webhook token (header=%s..., param=%s...)",
-                               _req_id, authorization[:30], secret[:10])
+            if not header_ok:
+                logger.warning("[%s] bad webhook token (header=%s...)",
+                               _req_id, authorization[:30])
                 raise HTTPException(status_code=403, detail="bad token")
 
         # 2. Parse payload

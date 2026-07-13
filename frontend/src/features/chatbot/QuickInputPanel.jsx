@@ -232,7 +232,7 @@ function LessonForm({ onFlash }) {
           <span className="mini-label">Course</span>
           <select value={v.course_id} onChange={set('course_id')}>
             <option value="">— select course —</option>
-            {courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
+            {Array.from(new Map(courses.map((c) => [c.course_name, c])).values()).map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
           </select>
 
           {!v.course_id && (
@@ -252,7 +252,7 @@ function LessonForm({ onFlash }) {
           <span className="mini-label">School</span>
           <select value={v.location} onChange={set('location')}>
             <option value="">— select school —</option>
-            {schools.map((s) => <option key={s.school_id} value={s.school_name}>{s.school_name}</option>)}
+            {Array.from(new Map(schools.map((s) => [s.school_name, s])).values()).map((s) => <option key={s.school_id} value={s.school_name}>{s.school_name}</option>)}
           </select>
           <span className="mini-label">Room (optional)</span>
           <input value={v.location_note} onChange={set('location_note')} placeholder="e.g., N404" />
@@ -313,13 +313,13 @@ function LessonForm({ onFlash }) {
           <span className="mini-label">Course</span>
           <select value={v.course_id} onChange={set('course_id')}>
             <option value="">— select course —</option>
-            {courses.map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
+            {Array.from(new Map(courses.map((c) => [c.course_name, c])).values()).map((c) => <option key={c.course_id} value={c.course_id}>{c.course_name}</option>)}
           </select>
 
           <span className="mini-label">School</span>
           <select value={v.school} onChange={set('school')}>
             <option value="">— select school —</option>
-            {schools.map((s) => <option key={s.school_id} value={s.school_name}>{s.school_name}</option>)}
+            {Array.from(new Map(schools.map((s) => [s.school_name, s])).values()).map((s) => <option key={s.school_id} value={s.school_name}>{s.school_name}</option>)}
           </select>
 
           {isAnnounce && !v.course_id && (

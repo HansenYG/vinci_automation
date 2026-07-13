@@ -1,0 +1,25 @@
+Product Requirements Document (PRD):
+Vinci Automation (overall)
+1. Vision & Core Philosophy
+ The Goal: Build an all in one platform and datahub for Vinci teaching operations which covers the end to end process from new class scheduled to completed lessons.
+ Core Principles:  Feature Specific Pages: Each page serves a specific purpose for operations to make
+layout as simple as possible.  Login Validation: Only logins using vinci email will be validated as "admin" status where
+they can see every page, other than that they should have no access.
+2. User Journey: First Login & Familiarization
+ Context: Jay wants to familiarize himself with the Vinci Automation system.  The Journey: 1. Jay first logs in using Vinci AI email for validation purposes. 2. When the page loads, the first thing he sees is the calendar of scheduled lessons with a
+chatbot interface to the right, and a navigation bar on the left. 3. Data input is a separate subsection of the chatbot (a separate button to choose
+between chat or input). 4. The chat/data input interface to the right can be reduced by pressing a button so he can
+view the main page (schedule, etc) more clearly. 5. He can view other pages (detail will be specified in other PRD's) each serving its own
+unique function to avoid overlapping use cases.
+3. Core Functional Requirements
+3.1 Feature Specific Pages
+ Sidebar for Navigation: Clear navigation interface with clear labels for which page does which function and clear indicator on which page the admin is on.
+ Chatbot & Data Input: Will be a separate subsection put to the right of the main page and can be reduced so admin can view a larger main page (will be positioned as a "helper").
+3.2 Login Validation
+ Login Addresses: Only vinci email (.vinciai.academy) may be validated as an admin and all other email addresses will only see "invalid login" page if they try to login.
+4. Delivery Boundaries
+ Clean & readable page separation with clear functionality and labelling for each page.
+
+ Secure login system to ensure no data leaks of sensitive information.
+
+
