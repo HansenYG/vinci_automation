@@ -11,16 +11,14 @@ assigns them, and sends out lesson materials.
 - **Messaging** — WATI (WhatsApp)
 - **LLM** — Ollama (local) or OpenAI-compatible providers (Groq, etc.)
 
-## Production URLs
+## Deploy pipeline
 
-| Service | URL | Branch | Auto-deploy |
-|---------|-----|--------|-------------|
-| Frontend (prod) | https://vinci-automation.vercel.app | `production` | Vercel auto-deploy |
-| Backend (prod)  | https://vinci-automation-api.onrender.com | `production` | Render auto-deploy |
-| API Docs (prod) | https://vinci-automation-api.onrender.com/api/docs | — | — |
-| Frontend (beta) | — | `beta` | Vercel (preview deploy) |
-| Backend (beta)  | https://vinci-automation-api-beta.onrender.com | `beta` | Render auto-deploy |
-| API Docs (beta) | https://vinci-automation-api-beta.onrender.com/api/docs | — | — |
+| Environment | Branch | Frontend | Backend |
+|-------------|--------|----------|---------|
+| 🟢 Production | `main` | https://vinci-automation.vercel.app | https://vinci-automation-api.onrender.com |
+| 🟡 Dev/testing | `beta` | Vercel preview | https://vinci-automation-api-beta.onrender.com |
+
+Workflow: develop on `beta` → push to test → merge `beta` into `main` to release.
 
 <!-- SECURITY: Deploy hook URL/key removed. Rotate key in Render dashboard if it was exposed. -->
 
@@ -126,21 +124,23 @@ Workflow: commit → push to `beta` → test → merge `beta` → `production` t
 
 | Environment | Branch | VITE_API_BASE_URL |
 |-------------|--------|-------------------|
+<<<<<<< HEAD
 | Production | `production` | `https://vinci-automation-api.onrender.com` |
 | Beta (preview) | `beta` | `https://vinci-automation-api-beta.onrender.com` |
 
-Push to `production` branch — Vercel auto-deploys from `frontend/` with
-`vercel.json`. Set `VITE_API_BASE_URL` as a Vercel environment variable per
-the table above.
+| Production | `main` | `https://vinci-automation-api.onrender.com` |
+| Preview (beta) | `beta` | `https://vinci-automation-api-beta.onrender.com` |
+
+Push to branch — Vercel auto-deploys from `frontend/` with `vercel.json`.
 
 ### Backend (Render)
 
 | Environment | Branch | Blueprint |
 |-------------|--------|-----------|
-| Production | `production` | `render.yaml` |
-| Beta | `beta` | `render.beta.yaml` |
+| Production | `main` | `render.yaml` |
+| Dev/testing | `beta` | `render.beta.yaml` |
 
-Push to the branch — Render auto-deploys using the matching blueprint.
+Push to branch — Render auto-deploys using matching blueprint.
 Env vars are set in the Render dashboard (never committed).
 
 ### Docker (local)
