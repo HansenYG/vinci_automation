@@ -18,7 +18,7 @@ begin
     set status = 'Archived',
         notes = coalesce(notes, '') || ' | Auto-archived: stale unassigned lesson past ' || max_age_days || ' days'
     where status in ('Unassigned', 'OfferSent')
-      and lesson_date < (current_date - max_age_days)
+      and date < (current_date - max_age_days)
       and (notes is null or notes not like '%Auto-archived%');
     
     get diagnostics v_count = row_count;
