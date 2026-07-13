@@ -1,5 +1,6 @@
-# Render blueprint for the BETA backend service.
+# Render blueprint for the BETA backend service (dev testing).
 # Deploys from the `beta` branch to a separate service.
+# Production: use render.yaml (deploys from `production` branch).
 services:
   - type: web
     name: vinci-automation-api-beta

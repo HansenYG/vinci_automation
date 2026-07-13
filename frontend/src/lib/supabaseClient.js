@@ -1,6 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 
 // Browser-side Supabase client.
+// Uses cookie-based auth via @supabase/ssr instead of localStorage
+// to mitigate JWT token exfiltration via XSS.
 // Only the public anon key belongs here — never expose the service role key
 // on the frontend. Set these values in your .env file.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -14,13 +16,22 @@ if (!supabaseUrl || !supabaseAnonKey) {
   )
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // Persist the session and keep it fresh so users stay logged in across
-    // reloads (Business Rules s.18 "session persistence").
+    // Use cookie-based persistence instead of localStorage.
+    // Cookies with proper flags (Secure, SameSite=Lax) reduce XSS risk.
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storageKey: 'vinci.auth',
+  },
+  cookieOptions: {
+    name: 'vinci-auth-token',
+    secure: true,
+    sameSite: 'lax',
+    path: '/',
+    // httpOnly cannot be set from the browser — requires a custom backend endpoint.
+    // For full httpOnly cookie protection, implement a token-exchange endpoint
+    // on the FastAPI backend that sets httpOnly cookies server-side.
   },
 })
