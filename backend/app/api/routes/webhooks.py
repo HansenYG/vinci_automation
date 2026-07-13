@@ -93,6 +93,7 @@ def _classify(text: str) -> str | None:
     scores = Counter()
     for intent, keywords in INTENT_KEYWORDS.items():
         for kw in keywords:
+            kw = kw.lower()
             if kw.isascii():
                 pattern = r'\b' + re.escape(kw) + r'\b'
                 if re.search(pattern, low):
