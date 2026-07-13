@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        max_age=0,
     )
 
     # Security headers middleware — mitigates XSS, clickjacking, MIME sniffing
