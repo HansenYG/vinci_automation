@@ -59,7 +59,7 @@ def _extract_text(payload: dict) -> str:
             if val:
                 return val
 
-    # Legacy flat button structures
+    # WATI flat button structures
     for btn_key in ("buttonReply", "interactiveButtonReply"):
         btn = payload.get(btn_key) or {}
         for field in ("text", "title", "id"):
@@ -71,6 +71,7 @@ def _extract_text(payload: dict) -> str:
     # Fallback to text fields
     return (
         _val(payload.get("text"))
+        or _val(payload.get("data"))
         or _val((payload.get("listReply") or {}).get("title"))
         or _val((payload.get("message") or {}).get("text"))
         or _val((payload.get("message") or {}).get("body"))
@@ -154,7 +155,10 @@ async def wati_webhook(
 
         # 3. Trigger guard
         event_type = str(payload.get("eventType", "")).lower()
-        if event_type and event_type not in ("message", "interactive"):
+        # WATI inbound message events: "message" (API docs), "messagereceived"
+        # (status/webhook naming), "interactive" (button clicks). Ignore status
+        # events like templateMessageSent_v2, sentMessageReplied_v2, etc.
+        if event_type and event_type not in ("message", "messagereceived", "interactive"):
             logger.info("[%s] ignored — eventType=%s", _req_id, event_type)
             return {"status": "ignored", "reason": f"event '{event_type}'"}
         if payload.get("owner") in (True, "true"):
