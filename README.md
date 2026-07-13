@@ -19,7 +19,7 @@ assigns them, and sends out lesson materials.
 | Backend  | https://vinci-automation-api-beta.onrender.com | `beta` | Render auto-deploy + webhook |
 | API Docs | https://vinci-automation-api-beta.onrender.com/api/docs | — | — |
 
-**Render deploy hook:** `https://api.render.com/deploy/srv-d8sva3ernols739umk5g?key=F_SsMX0N-F8`
+<!-- SECURITY: Deploy hook URL/key removed. Rotate key in Render dashboard if it was exposed. -->
 
 ## Phase status
 
@@ -50,9 +50,12 @@ Google Apps Scripts — see `backend/reference/README.md`.
 
 ## Auth
 
-Uses Supabase Auth with email/password login. Session is stored in
-`localStorage` under `vinci.auth` key. Role-gating is applied on the frontend
-(admin role required).
+Uses Supabase Auth with email/password login. Session uses cookie-based
+storage (@supabase/ssr) instead of localStorage to reduce JWT token
+exfiltration risk. Role-gating is applied on the frontend (admin role required).
+
+**Security note:** For full httpOnly cookie protection, implement a
+token-exchange endpoint on the FastAPI backend.
 
 **Test credentials:** `hansenyg@vinciai.academy` / `VinciBeta2026!`
 
@@ -116,10 +119,7 @@ as a Vercel environment variable.
 Push to `beta` branch — Render auto-deploys from `backend/` using
 `render.beta.yaml`. Env vars are set in the Render dashboard (never committed).
 
-Alternatively, trigger a manual deploy via the webhook:
-```bash
-curl -X POST "https://api.render.com/deploy/srv-d8sva3ernols739umk5g?key=F_SsMX0N-F8"
-```
+<!-- SECURITY: Deploy hook removed. Trigger deployments via Render dashboard or CLI. -->
 
 The `beta` branch has diverged from `main`. To push changes to `beta`:
 ```bash

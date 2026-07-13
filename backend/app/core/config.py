@@ -28,8 +28,10 @@ class Settings(BaseSettings):
     # SUPABASE_URL must be set in .env (no default — fail fast if missing).
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
-    # Public anon key used by Supabase Auth API calls (safe to embed).
-    SUPABASE_ANON_KEY: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppZ3pnenVybXVwbGdjcXNubmx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzUyMjIsImV4cCI6MjA5ODM1MTIyMn0.cGkHBdME80jDYDGRV_IBcGVp0k7IyCzxWSZOLqsZcIQ"
+    # Public anon key used by Supabase Auth API calls (safe to embed in frontend,
+    # but should be env-configurable for different environments).
+    # TODO: Move to env var SUPABASE_ANON_KEY with this as the fallback default.
+    SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppZ3pnenVybXVwbGdjcXNubmx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzUyMjIsImV4cCI6MjA5ODM1MTIyMn0.cGkHBdME80jDYDGRV_IBcGVp0k7IyCzxWSZOLqsZcIQ")
 
     # --- WATI (WhatsApp) --------------------------------------------------
     # ENDPOINT_BASE includes the tenant id, e.g. https://live-mt-server.wati.io/111307
