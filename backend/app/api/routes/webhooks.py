@@ -121,6 +121,28 @@ def _soonest(views: list[dict]) -> dict | None:
     return sorted(pool, key=lambda v: (str(v.get("lesson_date")), str(v.get("start_time") or "")))[0]
 
 
+@router.post("/webhooks/wati-debug")
+async def wati_debug(request: Request):
+    """Diagnostic endpoint: echo the raw WATI payload back.
+
+    No auth, no DB mutation. Use this to verify WATI is reaching the backend
+    and to see exactly what payload shape a real button reply uses.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        form = await request.form()
+        payload = dict(form)
+    return {
+        "received": True,
+        "eventType": payload.get("eventType"),
+        "text": _extract_text(payload),
+        "waId": payload.get("waId") or payload.get("whatsappNumber") or payload.get("phone"),
+        "raw_keys": list(payload.keys()),
+        "raw": payload,
+    }
+
+
 @router.post("/webhooks/wati")
 async def wati_webhook(
     request: Request,
