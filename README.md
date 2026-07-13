@@ -15,9 +15,12 @@ assigns them, and sends out lesson materials.
 
 | Service | URL | Branch | Auto-deploy |
 |---------|-----|--------|-------------|
-| Frontend | https://vinci-automation.vercel.app | `main` | Vercel auto-deploy |
-| Backend  | https://vinci-automation-api-beta.onrender.com | `beta` | Render auto-deploy + webhook |
-| API Docs | https://vinci-automation-api-beta.onrender.com/api/docs | — | — |
+| Frontend (prod) | https://vinci-automation.vercel.app | `production` | Vercel auto-deploy |
+| Backend (prod)  | https://vinci-automation-api.onrender.com | `production` | Render auto-deploy |
+| API Docs (prod) | https://vinci-automation-api.onrender.com/api/docs | — | — |
+| Frontend (beta) | — | `beta` | Vercel (preview deploy) |
+| Backend (beta)  | https://vinci-automation-api-beta.onrender.com | `beta` | Render auto-deploy |
+| API Docs (beta) | https://vinci-automation-api-beta.onrender.com/api/docs | — | — |
 
 <!-- SECURITY: Deploy hook URL/key removed. Rotate key in Render dashboard if it was exposed. -->
 
@@ -108,23 +111,37 @@ sorting/buckets/empty-state), Assignment flows (accept/cancel/reschedule/
 re-blast), Dock (open/close/chat/data tab/persistence), AI Chatbot
 (confirmation flow for reschedule/create/delete).
 
-## Deploy
+## Deploy pipeline
+
+### Branch strategy
+
+| Branch | Environment | Hosting |
+|--------|-------------|---------|
+| `production` | 🟢 User testing / production | Vercel (prod) + Render (prod) |
+| `beta` | 🟡 Dev testing / staging | Vercel (preview) + Render (beta) |
+
+Workflow: commit → push to `beta` → test → merge `beta` → `production` to release.
 
 ### Frontend (Vercel)
-Push to `main` branch — Vercel auto-deploys from `frontend/` with
-`vercel.json`. Set `VITE_API_BASE_URL` to `https://vinci-automation-api-beta.onrender.com`
-as a Vercel environment variable.
+
+| Environment | Branch | VITE_API_BASE_URL |
+|-------------|--------|-------------------|
+| Production | `production` | `https://vinci-automation-api.onrender.com` |
+| Beta (preview) | `beta` | `https://vinci-automation-api-beta.onrender.com` |
+
+Push to `production` branch — Vercel auto-deploys from `frontend/` with
+`vercel.json`. Set `VITE_API_BASE_URL` as a Vercel environment variable per
+the table above.
 
 ### Backend (Render)
-Push to `beta` branch — Render auto-deploys from `backend/` using
-`render.beta.yaml`. Env vars are set in the Render dashboard (never committed).
 
-<!-- SECURITY: Deploy hook removed. Trigger deployments via Render dashboard or CLI. -->
+| Environment | Branch | Blueprint |
+|-------------|--------|-----------|
+| Production | `production` | `render.yaml` |
+| Beta | `beta` | `render.beta.yaml` |
 
-The `beta` branch has diverged from `main`. To push changes to `beta`:
-```bash
-git push origin beta-temp:beta   # use a temp branch name locally
-```
+Push to the branch — Render auto-deploys using the matching blueprint.
+Env vars are set in the Render dashboard (never committed).
 
 ### Docker (local)
 ```bash
