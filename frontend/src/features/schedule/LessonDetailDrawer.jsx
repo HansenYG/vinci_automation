@@ -203,7 +203,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
           flash(`Error: ${body.detail || 'This tutor is already assigned.'}`, 'error')
         } else if (body.error_code === 'CLASH') {
           // Show the clash modal — user must confirm
-          const existingName = lesson.assigned_teacher_name || 'existing tutor'
+          const existingName = assignedTutors.length > 0 ? assignedTutors.join(', ') : 'existing tutor(s)'
           const newTeacher   = accepted.find((t) => t.teacher_id === teacherId)
           const newName      = newTeacher?.teacher_name || teacherId
           setClashPending({ teacherId, teacherName: newName, existingName })
@@ -316,7 +316,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             </div>
             
             <Field
-              label={assignedTutors.length > 1 ? 'Assigned tutors' : 'Assigned tutor'}
+              label="Assigned tutors"
               value={assignedTutors.length > 0 ? assignedTutors.join(', ') : 'Unassigned'}
             />
             <Field label="Tutors" value={`${assignedCount} / ${maxTutors}`} />

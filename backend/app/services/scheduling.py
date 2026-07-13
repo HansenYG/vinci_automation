@@ -189,10 +189,12 @@ def assign_tutor(
         raise ValueError(f"lesson {lesson_id} not found")
 
     max_t = max(1, int(lesson.get("max_tutors") or 1))
+    assigned_count = lesson.get("assigned_count", 0)
 
-    # Clash check (not covered by stored procedure)
+    # Clash check: when max_tutors is 1, replacing the existing tutor requires confirmation.
+    # For multi-tutor lessons we allow additional tutors until capacity is reached.
     existing_teacher_id = lesson.get("assigned_teacher_id")
-    if existing_teacher_id and existing_teacher_id != teacher_id and not force_reassign:
+    if max_t == 1 and existing_teacher_id and existing_teacher_id != teacher_id and not force_reassign:
         existing_name = lesson.get("assigned_teacher_name", existing_teacher_id)
         raise ValueError(f"CLASH: This lesson already has an assigned tutor ({existing_name}). Confirm re-assignment to proceed.")
 
