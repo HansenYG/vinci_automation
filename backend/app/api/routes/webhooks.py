@@ -209,26 +209,34 @@ async def wati_webhook(
 
         # 6. Route by intent
         if intent == "accept":
-            chosen, lesson = None, None
+            # Collect all pending offers across every candidate with this phone,
+            # then pick the most recently blasted one. This handles shared phone
+            # numbers correctly: the tutor whose message was most recently blasted
+            # is the one whose "Accept" reply is being processed.
+            all_pending = []
             for cand in candidates:
                 tid = cand["teacher_id"]
                 pending = repos.offers_for_teacher(db, tid, status="pending")
                 logger.info("[%s] cand=%s  pending_offers=%s",
                              _req_id, tid, [o.get("lesson_id") for o in pending])
-                # Pick the most recently blasted offer, not the soonest lesson.
-                # This way, tapping "Accept" on a new lesson's message accepts
-                # that lesson — not an older lesson that happens to be sooner.
-                pending.sort(key=lambda o: str(o.get("last_blast_at") or ""), reverse=True)
                 for offer in pending:
-                    v = repos.get_lesson_view(db, offer["lesson_id"])
-                    if v:
-                        chosen, lesson = cand, v
-                        break
-                if chosen:
-                    break
-            if not lesson:
+                    all_pending.append((offer, cand))
+
+            if not all_pending:
                 logger.warning("[%s] no pending offer for any candidate", _req_id)
                 return {"status": "no_match", "reason": "no pending offer for this number"}
+
+            all_pending.sort(key=lambda x: str(x[0].get("last_blast_at") or ""), reverse=True)
+            chosen, lesson = None, None
+            for offer, cand in all_pending:
+                v = repos.get_lesson_view(db, offer["lesson_id"])
+                if v:
+                    chosen, lesson = cand, v
+                    break
+            if not lesson:
+                logger.warning("[%s] no lesson view for any pending offer", _req_id)
+                return {"status": "no_match", "reason": "no pending offer for this number"}
+
             logger.info("[%s] accepting — teacher=%s  lesson=%s", _req_id, chosen["teacher_id"], lesson.get("id"))
             result = scheduling.record_acceptance(db, lesson["id"], chosen["teacher_id"])
             logger.info("[%s] accept result=%s", _req_id, result)
