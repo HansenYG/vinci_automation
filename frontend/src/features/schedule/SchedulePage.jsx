@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { PageHeader } from '../../components/layout/Layout'
 import { ChevronLeft, ChevronRight } from '../../components/layout/Icons'
 import LessonDetailDrawer from './LessonDetailDrawer'
@@ -32,6 +32,28 @@ export default function SchedulePage() {
   const { setOpen: setDockOpen, setTab: setDockTab } = useDock()
 
   useEffect(() => { localStorage.setItem('vinci.calzoom', String(zoom)) }, [zoom])
+
+  // Auto-scale zoom so the calendar fits the available width
+  const calRef = useRef(null)
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+
+  useEffect(() => {
+    const el = calRef.current
+    if (!el) return
+
+    const IDEAL_W = 924 // 7 cols × 132px at zoom 1
+
+    const apply = () => {
+      const maxFit = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, el.clientWidth / IDEAL_W))
+      el.style.setProperty('--zoom', Math.min(zoomRef.current, maxFit))
+    }
+
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   const { start, end } = useMemo(() => rangeFor(view, anchor), [view, anchor])
   const { lessons, loading, error, reload } = useSchedule(start, end)
@@ -102,7 +124,7 @@ export default function SchedulePage() {
           Could not load lessons. Is the backend running and Supabase configured?
         </div>}
 
-        <div className="cal-zoom" style={{ '--zoom': zoom }}>
+        <div className="cal-zoom" ref={calRef}>
           {loading ? <div className="spinner" /> : <ViewComp lessons={lessons} anchor={anchor} onSelect={setSelected} onDayClick={handleDayClick} />}
         </div>
       </div>
