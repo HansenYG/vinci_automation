@@ -273,6 +273,7 @@ def lesson_wati_context(view_row: dict) -> dict[str, str]:
         "end_time": str(view_row.get("end_time") or "")[:5],
         "urgency": urgency_label(view_row["lesson_date"]),
         "lesson_material_link": view_row.get("lesson_material_link") or "",
+        "g_map_link": view_row.get("google_maps_link") or "",
     }
 
 

@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # ENDPOINT_BASE includes the tenant id, e.g. https://live-mt-server.wati.io/111307
     WATI_API_URL: str = ""
     WATI_ACCESS_TOKEN: str = ""          # raw JWT; "Bearer " is added in code
-    WATI_TEMPLATE_UNASSIGNED: str = "unassigned_lesson_notification"
+    WATI_TEMPLATE_UNASSIGNED: str = "unassigned_lesson_notification_refined"
     WATI_TEMPLATE_CONFIRMATION: str = "tutor_confirmation_extra_info"
     WATI_TEMPLATE_CANCEL_ADMIN: str = "tutor_cancellation_or_reschedule_admin_reminder"
     WATI_BROADCAST_PREFIX: str = "vinci"
