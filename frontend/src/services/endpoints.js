@@ -42,6 +42,7 @@ export const getUrgentNews = () => data(api.get('/api/urgent-news'))
 
 // --- Chatbot ---
 export const getPresets = () => data(api.get('/api/chat/presets'))
-export const sendChat = (message, history = []) => data(api.post('/api/chat', { message, history }))
+export const sendChat = (message, history = [], { resolvedSchoolId, resolvedCourseId } = {}) =>
+  data(api.post('/api/chat', { message, history, resolved_school_id: resolvedSchoolId || null, resolved_course_id: resolvedCourseId || null }))
 export const executeAction = (operation, params = {}) => data(api.post('/api/chat/execute', { operation, params }))
 export const exportUrl = (dataset) => `${api.defaults.baseURL}/api/chat/export/${dataset}`

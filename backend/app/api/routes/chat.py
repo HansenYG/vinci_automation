@@ -28,7 +28,9 @@ def presets():
 @router.post("")
 def chat(body: ChatRequest, db: SyncPostgrestClient = Depends(get_db)):
     history = [m.model_dump() for m in body.history]
-    return chatbot.answer(db, body.message, history)
+    return chatbot.answer(db, body.message, history,
+                          resolved_school_id=body.resolved_school_id,
+                          resolved_course_id=body.resolved_course_id)
 
 
 @router.post("/execute")

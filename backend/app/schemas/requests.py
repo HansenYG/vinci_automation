@@ -138,3 +138,5 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
+    resolved_school_id: str | None = None
+    resolved_course_id: str | None = None

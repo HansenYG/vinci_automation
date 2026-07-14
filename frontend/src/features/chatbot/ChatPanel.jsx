@@ -72,11 +72,7 @@ const COMMANDS = [
     ],
     build: (vals) => {
       const course = vals.course_name || vals.course_name_typed
-      const sid = vals.school_id || ''
-      const cid = vals.course_id || ''
-      const sidPart = sid ? ` (school_id: ${sid})` : ''
-      const cidPart = cid ? ` (course_id: ${cid})` : ''
-      return `Create a ${course} lesson${cidPart} at ${vals.school_name}${sidPart} on ${vals.date} at ${vals.start}-${vals.end}`
+      return `Create a ${course} lesson at ${vals.school_name} on ${vals.date} at ${vals.start}-${vals.end}`
     },
   },
   {
@@ -122,6 +118,7 @@ export default function ChatPanel() {
   const [activeCmd, setActiveCmd] = useState(null)
   const [cmdVals, setCmdVals] = useState({})
   const scrollRef = useRef(null)
+  const resolvedRef = useRef({ schoolId: null, courseId: null })
 
   const resetCmd = useCallback((name) => {
     setCmdVals((prev) => ({ ...prev, [name]: { ...EMPTY_VALS[name] } }))
@@ -156,6 +153,9 @@ export default function ChatPanel() {
     const missing = cmd.fields.find((f) => f.required && !vals[f.key]?.trim())
     if (missing) return
     const text = cmd.build(vals)
+    if (cmd.name === 'create') {
+      resolvedRef.current = { schoolId: vals.school_id || null, courseId: vals.course_id || null }
+    }
     setActiveCmd(null)
     ask(text)
   }
@@ -171,11 +171,13 @@ export default function ChatPanel() {
   const ask = async (text) => {
     if (!text.trim() || busy) return
     const history = messages.filter((m) => m.source !== 'system').map((m) => ({ role: m.role, content: m.content }))
+    const resolved = { ...resolvedRef.current }
+    resolvedRef.current = { schoolId: null, courseId: null }
     setMessages((m) => [...m, { role: 'user', content: text }])
     setInput('')
     setBusy(true)
     try {
-      const res = await sendChat(text, history)
+      const res = await sendChat(text, history, resolved)
       const entry = { role: 'assistant', content: res.reply, source: res.source }
       if (res.pendingAction) {
         entry.pendingAction = res.pendingAction

@@ -172,7 +172,9 @@ def _llm_chat(
         return None
 
 
-def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = False) -> dict:
+def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = False,
+               resolved_school_id: str | None = None,
+               resolved_course_id: str | None = None) -> dict:
     """Free-form answer via LLM, grounded with a live DB snapshot."""
     now = _tz_now()
     today = now.date().isoformat()
@@ -285,6 +287,19 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
         f"{[{'code': r.get('lesson_code'), 'date': str(r.get('lesson_date') or ''), 'reason': r.get('reason')} for r in urgent_all[:12]]}\n"
         f"UPCOMING lessons: {upcoming}\n"
     )
+    # Inject pre-resolved school/course from frontend dropdown selection
+    resolved_hint = ""
+    if resolved_school_id:
+        sr = db.table("schools").select("school_id,school_name").eq("school_id", resolved_school_id).limit(1).execute().data
+        if sr:
+            resolved_hint += f"RESOLVED SCHOOL: {sr[0]['school_id']}: {sr[0]['school_name']}\n"
+    if resolved_course_id:
+        cr = db.table("courses").select("course_id,course_name").eq("course_id", resolved_course_id).limit(1).execute().data
+        if cr:
+            resolved_hint += f"RESOLVED COURSE: {cr[0]['course_id']}: {cr[0]['course_name']}\n"
+    if resolved_hint:
+        system += "\n" + resolved_hint
+        system += "When RESOLVED SCHOOL or RESOLVED COURSE is shown above, use the ID directly in ACTION params — do NOT verify the name against the catalog.\n"
     full_messages = [{"role": "system", "content": system}]
     full_messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-4:]]
     full_messages.append({"role": "user", "content": message})
@@ -318,7 +333,9 @@ def _set_cached_response(cache_key: str, response: dict):
         _RESPONSE_CACHE.pop(next(iter(_RESPONSE_CACHE)))
     _RESPONSE_CACHE[cache_key] = response
 
-def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
+def answer(db: Client, message: str, history: list[dict] | None = None,
+           *, resolved_school_id: str | None = None,
+           resolved_course_id: str | None = None) -> dict:
     lang = has_chinese(message)
     eng_msg = to_english(message) if lang else message
     eng_history = []
@@ -348,7 +365,9 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
         return rule_result
     
     # Fall back to LLM for complex queries
-    res = _llm_reply(db, eng_msg, eng_history or [], lang=lang)
+    res = _llm_reply(db, eng_msg, eng_history or [], lang=lang,
+                     resolved_school_id=resolved_school_id,
+                     resolved_course_id=resolved_course_id)
     if res["source"] != "fallback":
         reply = res.get("reply", "")
         match = re.search(r'^ACTION:\s*(\{.*\})\s*$', reply, re.MULTILINE)
