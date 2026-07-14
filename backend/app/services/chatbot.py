@@ -182,27 +182,33 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
     counts = _counts(db)
     upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:6]]
     courses_all = repos.list_rows(db, "courses")
-    course_names = [c['course_name'] for c in courses_all if c.get("course_name")]
     if lang:
-        eng_course_names = batch_to_english(course_names)
+        cn_course_names = [c.get('course_name') or '' for c in courses_all]
+        eng_course_names = batch_to_english(cn_course_names)
         course_catalog = []
-        for i in range(len(course_names)):
-            cn, en = course_names[i], eng_course_names[i]
+        for i, c in enumerate(courses_all):
+            cn = cn_course_names[i]
+            if not cn:
+                continue
+            en = eng_course_names[i]
             label = f"{cn} ({en})" if en.lower() != cn.lower() else cn
-            course_catalog.append(f"{courses_all[i]['course_id']}: {label}")
+            course_catalog.append(f"{c['course_id']}: {label}")
     else:
         course_catalog = [f"{c['course_id']}: {c['course_name']}" for c in courses_all if c.get("course_name")]
     schools_all = repos.list_rows(db, "schools")
-    school_names = [s['school_name'] for s in schools_all if s.get("school_name")]
     if lang:
-        eng_names = batch_to_english(school_names)
+        cn_names = [s.get('school_name') or '' for s in schools_all]
+        eng_names = batch_to_english(cn_names)
         school_catalog = []
-        for i in range(len(school_names)):
-            cn, en = school_names[i], eng_names[i]
+        for i, s in enumerate(schools_all):
+            cn = cn_names[i]
+            if not cn:
+                continue
+            en = eng_names[i]
             label = f"{cn} ({en})" if en.lower() != cn.lower() else cn
-            school_catalog.append(f"{schools_all[i]['school_id']}: {label}")
+            school_catalog.append(f"{s['school_id']}: {label}")
     else:
-        school_catalog = [f"{schools_all[i]['school_id']}: {school_names[i]}" for i in range(len(school_names))]
+        school_catalog = [f"{s['school_id']}: {s['school_name']}" for s in schools_all if s.get("school_name")]
     unassigned_all = repos.list_unassigned(db, 100)
     urgent_all = db.table("urgent_news").select("*").execute().data or []
 
@@ -235,6 +241,8 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
         "If the user does not mention a school, ASK them which school before outputting any ACTION.\n\n"
         "NON-EXISTENT COURSE HANDLING:\n"
         "Before creating a lesson, ALWAYS verify the course_name exists in the COURSE CATALOG below.\n"
+        "Course catalog entries may appear as 'COURSE_ID: Chinese Name (English Translation)'. "
+        "Match the user's course name against EITHER the Chinese name OR the English translation in parentheses.\n"
         "If the course does NOT exist in the catalog:\n"
         "  1. Do NOT output any ACTION for creating lessons.\n"
         "  2. Tell the user: \"The course '[name]' doesn't exist in our system. "
@@ -246,6 +254,8 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
         "ask if they still want to create the lesson.\n\n"
         "NON-EXISTENT SCHOOL HANDLING:\n"
         "ALWAYS check the SCHOOL CATALOG below when a user mentions a school by name.\n"
+        "School catalog entries may appear as 'SCHOOL_ID: Chinese Name (English Translation)'. "
+        "Match the user's school name against EITHER the Chinese name OR the English translation in parentheses.\n"
         "If the school does NOT exist in the catalog:\n"
         "  1. Do NOT output any ACTION that references the school.\n"
         "  2. Tell the user: \"The school '[name]' doesn't exist in our system. "
