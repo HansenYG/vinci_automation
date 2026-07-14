@@ -29,7 +29,7 @@ from supabase import Client
 
 from app.core.config import settings
 from app.services import repos, codes
-from app.services.translator import has_chinese, to_english, from_english
+from app.services.translator import has_chinese, to_english, from_english, batch_to_english
 
 # Simple in-memory cache for repeated queries (cache up to 100 most recent queries)
 _RESPONSE_CACHE = {}
@@ -172,7 +172,7 @@ def _llm_chat(
         return None
 
 
-def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
+def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = False) -> dict:
     """Free-form answer via LLM, grounded with a live DB snapshot."""
     now = _tz_now()
     today = now.date().isoformat()
@@ -182,7 +182,10 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
     courses_all = repos.list_rows(db, "courses")
     course_catalog = [f"{c['course_id']}: {c['course_name']}" for c in courses_all if c.get("course_name")]
     schools_all = repos.list_rows(db, "schools")
-    school_catalog = [f"{s['school_id']}: {s['school_name']}" for s in schools_all if s.get("school_name")]
+    school_names = [s['school_name'] for s in schools_all if s.get("school_name")]
+    if lang:
+        school_names = batch_to_english(school_names)
+    school_catalog = [f"{schools_all[i]['school_id']}: {school_names[i]}" for i in range(len(school_names))]
     unassigned_all = repos.list_unassigned(db, 100)
     urgent_all = db.table("urgent_news").select("*").execute().data or []
 
@@ -345,7 +348,7 @@ def answer(db: Client, message: str, history: list[dict] | None = None) -> dict:
         return rule_result
     
     # Fall back to LLM for complex queries
-    res = _llm_reply(db, eng_msg, eng_history or [])
+    res = _llm_reply(db, eng_msg, eng_history or [], lang=lang)
     if res["source"] != "fallback":
         reply = res.get("reply", "")
         match = re.search(r'^ACTION:\s*(\{.*\})\s*$', reply, re.MULTILINE)

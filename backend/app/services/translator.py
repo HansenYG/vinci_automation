@@ -17,6 +17,27 @@ def to_english(text: str) -> str:
         return text
 
 
+def batch_to_english(texts: list[str]) -> list[str]:
+    """Translate a list of Chinese strings to English in one API call."""
+    if not texts:
+        return texts
+    has_cjk = [has_chinese(t) for t in texts]
+    if not any(has_cjk):
+        return texts
+    try:
+        from deep_translator import GoogleTranslator
+        translator = GoogleTranslator(source="zh-CN", target="en")
+        joined = "\n".join(texts)
+        translated = translator.translate(joined)
+        parts = translated.split("\n") if translated else texts
+        # Pad or trim to match original length
+        if len(parts) < len(texts):
+            parts.extend(texts[len(parts):])
+        return parts[:len(texts)]
+    except Exception:
+        return texts
+
+
 def from_english(text: str, original_had_chinese: bool) -> str:
     if not original_had_chinese:
         return text
