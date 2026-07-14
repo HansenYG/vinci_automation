@@ -96,18 +96,18 @@ def send_template_message(
 # --- Template-specific helpers (param order/names match the approved templates) ---
 
 def send_unassigned_notification(phone: str, ctx: dict[str, str]) -> dict[str, Any]:
-    """`unassigned_lesson_notification` — a lesson is open for the pool."""
+    """`unassigned_lesson_notification_refined` — a lesson is open for the pool."""
     return send_template_message(
         phone,
         settings.WATI_TEMPLATE_UNASSIGNED,
         {
             "urgency": ctx.get("urgency", ""),
-            "course_name": ctx.get("course_name", ""),
-            "lesson_id": ctx.get("lesson_code", ""),
             "date": ctx.get("date", ""),
             "start_time": ctx.get("start_time", ""),
             "end_time": ctx.get("end_time", ""),
+            "course_name": ctx.get("course_name", ""),
             "school": ctx.get("school_name", ""),
+            "g_map_link": ctx.get("g_map_link", ""),
         },
     )
 
