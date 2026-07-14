@@ -25,9 +25,16 @@ const COMMANDS = [
     fields: [
       { key: 'lesson_id', label: 'Lesson ID', placeholder: 'e.g. L-2026-010' },
       { key: 'date', label: 'New date', placeholder: 'YYYY-MM-DD', type: 'date' },
-      { key: 'time', label: 'New time', placeholder: 'HH:MM', type: 'time' },
+      { key: 'start_time', label: 'Start time', placeholder: 'HH:MM', type: 'time' },
+      { key: 'end_time', label: 'End time', placeholder: 'HH:MM', type: 'time' },
     ],
-    build: (vals) => `Reschedule lesson ${vals.lesson_id} to ${vals.date} at ${vals.time}`,
+    build: (vals) => {
+      const parts = [`Reschedule lesson ${vals.lesson_id}`]
+      if (vals.date) parts.push(`to ${vals.date}`)
+      if (vals.start_time) parts.push(`at ${vals.start_time}`)
+      if (vals.end_time) parts.push(`ending ${vals.end_time}`)
+      return parts.join(' ')
+    },
   },
   {
     name: 'update',

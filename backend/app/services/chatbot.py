@@ -251,6 +251,9 @@ def _llm_reply(db: Client, message: str, history: list[dict]) -> dict:
         'User: "Move the IGCSE Physics lesson on July 10 to 16:00"\n'
         "Assistant: I can reschedule lesson L-2026-010 (IGCSE Physics) from July 10 14:00 to July 10 16:00. Shall I proceed?\n"
         'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-010","start_time":"16:00"}}\n\n'
+        'User: "Move the Python lesson on July 16 to 14:00-16:00"\n'
+        "Assistant: I can reschedule lesson L-2026-020 (Python) start to 14:00 and end to 16:00. Shall I proceed?\n"
+        'ACTION:{"operation":"reschedule","params":{"lesson_id":"L-2026-020","start_time":"14:00","end_time":"16:00"}}\n\n'
         'User: "ICT Python course on 24/2 and 17/3, 3:10-4:10"\n'
         "Assistant: I see ICT Python course dates on 24/2 and 17/3 at 3:10-4:10. "
         "Which school is this for, and would you like me to create new lessons or reschedule?\n"
