@@ -244,7 +244,7 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
         "The JSON must contain:\n"
         '  - For "reschedule": {"lesson_id":"...", "date":"YYYY-MM-DD" (optional), "start_time":"HH:MM" (optional), "end_time":"HH:MM" (optional)}\n'
         '  - For "update": {"lesson_id":"...", ANY fields to change as flat keys. Examples: {"lesson_id":"L-2026-010","status":"Cancelled"} or {"lesson_id":"L-2026-010","course":"Advanced Robotics Workshop"} or {"lesson_id":"L-2026-010","notes":"Parent requested afternoon"} or {"lesson_id":"L-2026-010","start_time":"16:00","end_time":"17:30"} or {"lesson_id":"L-2026-010","school_name":"St. Mary\'s School"}}\n'
-        '  - For "create": use "course_name" AND "school_name" (not ids). Example: {"course_name":"IGCSE Physics","school_name":"St. Mary\'s School","date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
+        '  - For "create": use "course_name" AND "school_name". If the user message includes "(school_id: ...)" or "(course_id: ...)", include them as "school_id" and "course_id" in the params too. Example: {"course_name":"IGCSE Physics","school_name":"St. Mary\'s School","school_id":"SCH-001","date":"YYYY-MM-DD","start_time":"HH:MM","end_time":"HH:MM","max_tutors":1}\n'
         '  - For "create_course": {"course_name":"...", "school_name":"...", "course_topic":"..." (optional), "course_types":"..." (optional)}\n'
         '  - For "create_school": {"school_name":"..."}\n'
         '  - For "delete": {"lesson_id":"..."}\n'
@@ -405,8 +405,8 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
             if rows:
                 course_id = rows[0]["course_id"]
         school_name = params.get("school_name")
-        school_id = None
-        if school_name:
+        school_id = params.get("school_id")
+        if not school_id and school_name:
             school_rows = db.table("schools").select("school_id").ilike("school_name", school_name).limit(1).execute().data
             if school_rows:
                 school_id = school_rows[0]["school_id"]

@@ -18,7 +18,11 @@ def to_english(text: str) -> str:
 
 
 def batch_to_english(texts: list[str]) -> list[str]:
-    """Translate a list of Chinese strings to English in one API call."""
+    """Translate a list of Chinese strings to English in one API call.
+
+    Uses numbered lines (``0: text\\n1: text``) so we can re-map results
+    even if Google Translate reorders or merges lines.
+    """
     if not texts:
         return texts
     has_cjk = [has_chinese(t) for t in texts]
@@ -27,13 +31,22 @@ def batch_to_english(texts: list[str]) -> list[str]:
     try:
         from deep_translator import GoogleTranslator
         translator = GoogleTranslator(source="zh-CN", target="en")
-        joined = "\n".join(texts)
-        translated = translator.translate(joined)
-        parts = translated.split("\n") if translated else texts
-        # Pad or trim to match original length
-        if len(parts) < len(texts):
-            parts.extend(texts[len(parts):])
-        return parts[:len(texts)]
+        numbered = "\n".join(f"{i}: {t}" for i, t in enumerate(texts))
+        translated = translator.translate(numbered)
+        if not translated:
+            return texts
+        result = list(texts)
+        for line in translated.split("\n"):
+            line = line.strip()
+            if ": " in line:
+                idx_str, _, rest = line.partition(": ")
+                try:
+                    idx = int(idx_str.strip())
+                    if 0 <= idx < len(result):
+                        result[idx] = rest.strip()
+                except ValueError:
+                    pass
+        return result
     except Exception:
         return texts
 

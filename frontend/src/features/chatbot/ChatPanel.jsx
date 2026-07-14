@@ -72,7 +72,11 @@ const COMMANDS = [
     ],
     build: (vals) => {
       const course = vals.course_name || vals.course_name_typed
-      return `Create a ${course} lesson at ${vals.school_name} on ${vals.date} at ${vals.start}-${vals.end}`
+      const sid = vals.school_id || ''
+      const cid = vals.course_id || ''
+      const sidPart = sid ? ` (school_id: ${sid})` : ''
+      const cidPart = cid ? ` (course_id: ${cid})` : ''
+      return `Create a ${course} lesson${cidPart} at ${vals.school_name}${sidPart} on ${vals.date} at ${vals.start}-${vals.end}`
     },
   },
   {
@@ -133,7 +137,18 @@ export default function ChatPanel() {
   }
 
   const setVal = (cmd, key, val) => {
-    setCmdVals((prev) => ({ ...prev, [cmd]: { ...prev[cmd], [key]: val } }))
+    setCmdVals((prev) => {
+      const next = { ...prev, [cmd]: { ...prev[cmd], [key]: val } }
+      if (cmd === 'create' && key === 'school_name') {
+        const match = schools.find((s) => s.school_name === val)
+        next[cmd].school_id = match ? match.school_id : ''
+      }
+      if (cmd === 'create' && key === 'course_name') {
+        const match = courses.find((c) => c.course_id === val)
+        next[cmd].course_id = match ? match.course_id : ''
+      }
+      return next
+    })
   }
 
   const submitCmd = (cmd) => {
