@@ -182,12 +182,27 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
     counts = _counts(db)
     upcoming = [_fmt(r) for r in repos.list_schedule(db, today, None)[:6]]
     courses_all = repos.list_rows(db, "courses")
-    course_catalog = [f"{c['course_id']}: {c['course_name']}" for c in courses_all if c.get("course_name")]
+    course_names = [c['course_name'] for c in courses_all if c.get("course_name")]
+    if lang:
+        eng_course_names = batch_to_english(course_names)
+        course_catalog = []
+        for i in range(len(course_names)):
+            cn, en = course_names[i], eng_course_names[i]
+            label = f"{cn} ({en})" if en.lower() != cn.lower() else cn
+            course_catalog.append(f"{courses_all[i]['course_id']}: {label}")
+    else:
+        course_catalog = [f"{c['course_id']}: {c['course_name']}" for c in courses_all if c.get("course_name")]
     schools_all = repos.list_rows(db, "schools")
     school_names = [s['school_name'] for s in schools_all if s.get("school_name")]
     if lang:
-        school_names = batch_to_english(school_names)
-    school_catalog = [f"{schools_all[i]['school_id']}: {school_names[i]}" for i in range(len(school_names))]
+        eng_names = batch_to_english(school_names)
+        school_catalog = []
+        for i in range(len(school_names)):
+            cn, en = school_names[i], eng_names[i]
+            label = f"{cn} ({en})" if en.lower() != cn.lower() else cn
+            school_catalog.append(f"{schools_all[i]['school_id']}: {label}")
+    else:
+        school_catalog = [f"{schools_all[i]['school_id']}: {school_names[i]}" for i in range(len(school_names))]
     unassigned_all = repos.list_unassigned(db, 100)
     urgent_all = db.table("urgent_news").select("*").execute().data or []
 
@@ -337,14 +352,8 @@ def answer(db: Client, message: str, history: list[dict] | None = None,
            *, resolved_school_id: str | None = None,
            resolved_course_id: str | None = None) -> dict:
     lang = has_chinese(message)
-    eng_msg = to_english(message) if lang else message
-    eng_history = []
-    if history:
-        for h in history:
-            eng_history.append({
-                "role": h.get("role", "user"),
-                "content": to_english(h.get("content", "")) if lang else h.get("content", ""),
-            })
+    eng_msg = message
+    eng_history = history or []
     
     # Check cache first for repeated queries
     cache_key = _get_cache_key(eng_msg, eng_history)
