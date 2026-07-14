@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from difflib import get_close_matches
 from datetime import date, datetime
 from functools import lru_cache
 import hashlib
@@ -172,6 +173,47 @@ def _llm_chat(
         return None
 
 
+def _fuzzy_resolve_names(message: str, db: Client) -> tuple[str | None, str | None]:
+    """Try to extract and resolve school/course names from user message via fuzzy match."""
+    school_id, course_id = None, None
+    # Extract school names from DB
+    schools = db.table("schools").select("school_id,school_name").execute().data or []
+    for s in schools:
+        name = s.get("school_name", "")
+        if not name:
+            continue
+        # Check if the name (or any word in it) appears in the message
+        if name in message:
+            school_id = s["school_id"]
+            break
+        # Fuzzy match for longer names (e.g. "你好" in "create lesson at 你好")
+        words = name.split()
+        if len(words) > 1:
+            for w in words:
+                if len(w) >= 2 and w in message:
+                    school_id = s["school_id"]
+                    break
+        if school_id:
+            break
+    # Extract course names from DB
+    courses = db.table("courses").select("course_id,course_name").execute().data or []
+    for c in courses:
+        name = c.get("course_name", "")
+        if not name:
+            continue
+        if name in message:
+            course_id = c["course_id"]
+            break
+        # Try matching significant words (3+ chars)
+        for word in name.split():
+            if len(word) >= 3 and word in message:
+                course_id = c["course_id"]
+                break
+        if course_id:
+            break
+    return school_id, course_id
+
+
 def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = False,
                resolved_school_id: str | None = None,
                resolved_course_id: str | None = None) -> dict:
@@ -313,6 +355,13 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
         f"UPCOMING lessons: {upcoming}\n"
     )
     # Inject pre-resolved school/course from frontend dropdown selection
+    # If no frontend IDs, try server-side fuzzy match from message text
+    if not resolved_school_id or not resolved_course_id:
+        auto_sid, auto_cid = _fuzzy_resolve_names(message, db)
+        if not resolved_school_id:
+            resolved_school_id = auto_sid
+        if not resolved_course_id:
+            resolved_course_id = auto_cid
     resolved_hint = ""
     if resolved_school_id:
         sr = db.table("schools").select("school_id,school_name").eq("school_id", resolved_school_id).limit(1).execute().data
