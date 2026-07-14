@@ -292,14 +292,14 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
     if resolved_school_id:
         sr = db.table("schools").select("school_id,school_name").eq("school_id", resolved_school_id).limit(1).execute().data
         if sr:
-            resolved_hint += f"RESOLVED SCHOOL: {sr[0]['school_id']}: {sr[0]['school_name']}\n"
+            resolved_hint += f"PRE-RESOLVED SCHOOL: school_id={sr[0]['school_id']}, school_name={sr[0]['school_name']}\n"
     if resolved_course_id:
         cr = db.table("courses").select("course_id,course_name").eq("course_id", resolved_course_id).limit(1).execute().data
         if cr:
-            resolved_hint += f"RESOLVED COURSE: {cr[0]['course_id']}: {cr[0]['course_name']}\n"
+            resolved_hint += f"PRE-RESOLVED COURSE: course_id={cr[0]['course_id']}, course_name={cr[0]['course_name']}\n"
     if resolved_hint:
         system += "\n" + resolved_hint
-        system += "When RESOLVED SCHOOL or RESOLVED COURSE is shown above, use the ID directly in ACTION params — do NOT verify the name against the catalog.\n"
+        system += "When PRE-RESOLVED SCHOOL/COURSE is shown, use BOTH the school_name/course_name AND school_id/course_id in ACTION params. Do NOT verify the name against the catalog — it is already confirmed to exist.\n"
     full_messages = [{"role": "system", "content": system}]
     full_messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-4:]]
     full_messages.append({"role": "user", "content": message})
