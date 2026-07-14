@@ -42,9 +42,19 @@ def _extract_text(payload: dict) -> str:
         if isinstance(v, dict):
             return str(v.get("body") or v.get("text") or v.get("title") or "")
         return str(v) if v else ""
-        
+
+    # WATI button_reply can arrive directly under message (no interactive wrapper):
+    # { "message": { "type": "button_reply", "button_reply": { "id": "btn", "title": "Accept" } } }
+    msg = payload.get("message") or {}
+    if isinstance(msg, dict) and msg.get("type") == "button_reply":
+        btn = msg.get("button_reply") or {}
+        if isinstance(btn, dict):
+            val = _val(btn.get("title") or btn.get("id"))
+            if val:
+                return val
+
     # Handle WATI/WhatsApp Cloud API 'interactive' payload structure
-    interactive = payload.get("interactive") or (payload.get("message") or {}).get("interactive") or {}
+    interactive = payload.get("interactive") or msg.get("interactive") or {}
     if isinstance(interactive, dict):
         # Check button reply
         btn_reply = interactive.get("button_reply") or {}
@@ -180,9 +190,12 @@ async def wati_webhook(
         # 3. Trigger guard
         event_type = str(payload.get("eventType", "")).lower()
         # WATI inbound message events: "message" (API docs), "messagereceived"
-        # (status/webhook naming), "interactive" (button clicks). Ignore status
+        # (status/webhook naming), "interactive" (button clicks), plus various
+        # WATI-specific event types that carry inbound messages. Ignore status
         # events like templateMessageSent_v2, sentMessageReplied_v2, etc.
-        if event_type and event_type not in ("message", "messagereceived", "interactive"):
+        # Be permissive — the original script had no event-type filter.
+        ignored_prefixes = ("template", "sent", "delivered", "read", "failed")
+        if event_type and any(event_type.startswith(p) for p in ignored_prefixes):
             logger.info("[%s] ignored — eventType=%s", _req_id, event_type)
             return {"status": "ignored", "reason": f"event '{event_type}'"}
         if payload.get("owner") in (True, "true"):
