@@ -118,7 +118,7 @@ export default function ChatPanel() {
   const [activeCmd, setActiveCmd] = useState(null)
   const [cmdVals, setCmdVals] = useState({})
   const scrollRef = useRef(null)
-  const resolvedRef = useRef({ schoolId: null, courseId: null })
+  const resolvedRef = useRef({ resolvedSchoolId: null, resolvedCourseId: null })
 
   const resetCmd = useCallback((name) => {
     setCmdVals((prev) => ({ ...prev, [name]: { ...EMPTY_VALS[name] } }))
@@ -154,7 +154,7 @@ export default function ChatPanel() {
     if (missing) return
     const text = cmd.build(vals)
     if (cmd.name === 'create') {
-      resolvedRef.current = { schoolId: vals.school_id || null, courseId: vals.course_id || null }
+      resolvedRef.current = { resolvedSchoolId: vals.school_id || null, resolvedCourseId: vals.course_id || null }
     }
     setActiveCmd(null)
     ask(text)
@@ -172,7 +172,7 @@ export default function ChatPanel() {
     if (!text.trim() || busy) return
     const history = messages.filter((m) => m.source !== 'system').map((m) => ({ role: m.role, content: m.content }))
     const resolved = { ...resolvedRef.current }
-    resolvedRef.current = { schoolId: null, courseId: null }
+    resolvedRef.current = { resolvedSchoolId: null, resolvedCourseId: null }
     setMessages((m) => [...m, { role: 'user', content: text }])
     setInput('')
     setBusy(true)

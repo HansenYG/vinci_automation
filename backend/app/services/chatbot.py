@@ -423,12 +423,22 @@ def execute_operation(db: Client, operation: str, params: dict) -> dict:
             rows = db.table("courses").select("course_id").ilike("course_name", course_name).limit(1).execute().data
             if rows:
                 course_id = rows[0]["course_id"]
+            # Exact-match fallback
+            if not course_id:
+                rows = db.table("courses").select("course_id").eq("course_name", course_name).limit(1).execute().data
+                if rows:
+                    course_id = rows[0]["course_id"]
         school_name = params.get("school_name")
         school_id = params.get("school_id")
         if not school_id and school_name:
             school_rows = db.table("schools").select("school_id").ilike("school_name", school_name).limit(1).execute().data
             if school_rows:
                 school_id = school_rows[0]["school_id"]
+            # Exact-match fallback
+            if not school_id:
+                school_rows = db.table("schools").select("school_id").eq("school_name", school_name).limit(1).execute().data
+                if school_rows:
+                    school_id = school_rows[0]["school_id"]
         date_val = params.get("date")
         if not course_id or not date_val:
             return {"ok": False, "error": "Missing course or date"}
