@@ -157,18 +157,6 @@ def record_acceptance(db: Client, lesson_id: str, teacher_id: str) -> dict:
         raw = (lesson.get("raw_status") or "").lower()
         if raw in ("unassigned", "offersent", ""):
             repos.update_row(db, "lessons", lesson_id, {"status": "HasAcceptance"})
-
-    # WhatsApp confirmation to the tutor so they know the acceptance went through
-    teacher = repos.get_row(db, "teachers", teacher_id)
-    if teacher:
-        phone = wati.normalize_phone(teacher.get("whatsapp_number"))
-        if phone and lesson:
-            ctx = repos.lesson_wati_context(lesson)
-            ctx["tutor_name"] = teacher.get("teacher_name", "")
-            ctx["lesson_material_link"] = ""  # no material yet — admin hasn't assigned
-            res = wati.send_confirmation(phone, ctx)
-            repos.log_event(db, lesson_id, teacher_id, "acceptance_confirmed", {"ok": res["ok"]})
-
     return {"lesson_id": lesson_id, "teacher_id": teacher_id, "offer_status": "accepted"}
 
 
