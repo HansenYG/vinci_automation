@@ -144,6 +144,17 @@ _BILINGUAL_KEYWORDS: dict[str, list[str]] = {
 }
 
 
+def _translate_header_only(header: str, data_lines: list[str], lang: str) -> str:
+    """Translate only the header line, keep data lines as-is."""
+    if lang == "en":
+        return header + "\n" + "\n".join(data_lines) if data_lines else header
+    translated_header = _to_chinese(header, lang)
+    parts = [translated_header]
+    if data_lines:
+        parts.append("\n".join(data_lines))
+    return "\n".join(parts)
+
+
 def _deterministic_answer_bilingual(db: Client, message: str, lang: str) -> dict | None:
     """Fast rule-based responses for common Cantonese/Mandarin queries."""
     m = message
@@ -151,35 +162,41 @@ def _deterministic_answer_bilingual(db: Client, message: str, lang: str) -> dict
     # Unassigned lessons
     if any(k in m for k in _BILINGUAL_KEYWORDS["unassigned"]):
         rows = repos.list_unassigned(db, limit=50)
-        lines = [
+        data_lines = [
             f"- {r['lesson_code']} · {r.get('course_name') or '?'} · {r['lesson_date']} ({r['color']})"
             for r in rows
         ]
-        reply = f"{len(rows)} unassigned lesson(s):\n" + "\n".join(lines) if rows else "No unassigned lessons."
-        if lang != "en":
-            reply = _to_chinese(reply, lang)
+        if rows:
+            header = f"{len(rows)} unassigned lesson(s):"
+            reply = _translate_header_only(header, data_lines, lang)
+        else:
+            reply = _to_chinese("No unassigned lessons.", lang) if lang != "en" else "No unassigned lessons."
         return {"reply": reply, "source": "db", "data": rows}
 
     # Urgent lessons
     if any(k in m for k in _BILINGUAL_KEYWORDS["urgent"]):
         rows = db.table("urgent_news").select("*").execute().data or []
-        lines = [
+        data_lines = [
             f"- {r['lesson_code']} · {r.get('course_name') or '?'} · {r['lesson_date']} · {r['reason']}"
             for r in rows
         ]
-        reply = f"{len(rows)} urgent item(s):\n" + "\n".join(lines) if rows else "Nothing urgent within a week."
-        if lang != "en":
-            reply = _to_chinese(reply, lang)
+        if rows:
+            header = f"{len(rows)} urgent item(s):"
+            reply = _translate_header_only(header, data_lines, lang)
+        else:
+            reply = _to_chinese("Nothing urgent within a week.", lang) if lang != "en" else "Nothing urgent within a week."
         return {"reply": reply, "source": "db", "data": rows}
 
     # Today's schedule
     if any(k in m for k in _BILINGUAL_KEYWORDS["today"]):
         today = _tz_today().isoformat()
         rows = repos.list_schedule(db, today, today)
-        lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
-        reply = f"{len(rows)} lesson(s) today:\n" + "\n".join(lines) if rows else "No lessons scheduled today."
-        if lang != "en":
-            reply = _to_chinese(reply, lang)
+        data_lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
+        if rows:
+            header = f"{len(rows)} lesson(s) today:"
+            reply = _translate_header_only(header, data_lines, lang)
+        else:
+            reply = _to_chinese("No lessons scheduled today.", lang) if lang != "en" else "No lessons scheduled today."
         return {"reply": reply, "source": "db", "data": rows}
 
     # Tomorrow's schedule
@@ -187,10 +204,12 @@ def _deterministic_answer_bilingual(db: Client, message: str, lang: str) -> dict
         from datetime import timedelta
         tomorrow = (_tz_today() + timedelta(days=1)).isoformat()
         rows = repos.list_schedule(db, tomorrow, tomorrow)
-        lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
-        reply = f"{len(rows)} lesson(s) tomorrow:\n" + "\n".join(lines) if rows else "No lessons tomorrow."
-        if lang != "en":
-            reply = _to_chinese(reply, lang)
+        data_lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
+        if rows:
+            header = f"{len(rows)} lesson(s) tomorrow:"
+            reply = _translate_header_only(header, data_lines, lang)
+        else:
+            reply = _to_chinese("No lessons tomorrow.", lang) if lang != "en" else "No lessons tomorrow."
         return {"reply": reply, "source": "db", "data": rows}
 
     # Yesterday's schedule
@@ -198,10 +217,12 @@ def _deterministic_answer_bilingual(db: Client, message: str, lang: str) -> dict
         from datetime import timedelta
         yesterday = (_tz_today() - timedelta(days=1)).isoformat()
         rows = repos.list_schedule(db, yesterday, yesterday)
-        lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
-        reply = f"{len(rows)} lesson(s) yesterday:\n" + "\n".join(lines) if rows else "No lessons yesterday."
-        if lang != "en":
-            reply = _to_chinese(reply, lang)
+        data_lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
+        if rows:
+            header = f"{len(rows)} lesson(s) yesterday:"
+            reply = _translate_header_only(header, data_lines, lang)
+        else:
+            reply = _to_chinese("No lessons yesterday.", lang) if lang != "en" else "No lessons yesterday."
         return {"reply": reply, "source": "db", "data": rows}
 
     # Count/summary
@@ -215,28 +236,34 @@ def _deterministic_answer_bilingual(db: Client, message: str, lang: str) -> dict
     # List teachers
     if any(k in m for k in _BILINGUAL_KEYWORDS["list_teachers"]):
         rows = repos.list_rows(db, "teachers", limit=50)
-        lines = [f"- {r['teacher_name']} ({r['teacher_id']})" for r in rows]
-        reply = f"{len(rows)} teacher(s):\n" + "\n".join(lines) if rows else "No teachers found."
-        if lang != "en":
-            reply = _to_chinese(reply, lang)
+        data_lines = [f"- {r['teacher_name']} ({r['teacher_id']})" for r in rows]
+        if rows:
+            header = f"{len(rows)} teacher(s):"
+            reply = _translate_header_only(header, data_lines, lang)
+        else:
+            reply = _to_chinese("No teachers found.", lang) if lang != "en" else "No teachers found."
         return {"reply": reply, "source": "db", "data": rows}
 
     # List courses
     if any(k in m for k in _BILINGUAL_KEYWORDS["list_courses"]):
         rows = repos.list_rows(db, "courses", limit=50)
-        lines = [f"- {r['course_name']} ({r['course_id']})" for r in rows]
-        reply = f"{len(rows)} course(s):\n" + "\n".join(lines) if rows else "No courses found."
-        if lang != "en":
-            reply = _to_chinese(reply, lang)
+        data_lines = [f"- {r['course_name']} ({r['course_id']})" for r in rows]
+        if rows:
+            header = f"{len(rows)} course(s):"
+            reply = _translate_header_only(header, data_lines, lang)
+        else:
+            reply = _to_chinese("No courses found.", lang) if lang != "en" else "No courses found."
         return {"reply": reply, "source": "db", "data": rows}
 
     # List schools
     if any(k in m for k in _BILINGUAL_KEYWORDS["list_schools"]):
         rows = repos.list_rows(db, "schools", limit=50)
-        lines = [f"- {r['school_name']} ({r['school_id']})" for r in rows]
-        reply = f"{len(rows)} school(s):\n" + "\n".join(lines) if rows else "No schools found."
-        if lang != "en":
-            reply = _to_chinese(reply, lang)
+        data_lines = [f"- {r['school_name']} ({r['school_id']})" for r in rows]
+        if rows:
+            header = f"{len(rows)} school(s):"
+            reply = _translate_header_only(header, data_lines, lang)
+        else:
+            reply = _to_chinese("No schools found.", lang) if lang != "en" else "No schools found."
         return {"reply": reply, "source": "db", "data": rows}
 
     return None
