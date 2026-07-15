@@ -1,6 +1,12 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
+function isBetaPreviewMode() {
+  if (typeof window === 'undefined') return false
+  const host = window.location.hostname || ''
+  return host.includes('vercel.app') || host.includes('beta') || host.includes('preview')
+}
+
 function FullScreenLoader({ label = 'Loading…', sublabel = null }) {
   return (
     <div className="auth-shell">
@@ -28,6 +34,9 @@ export function RequireAuth({ children }) {
   // (role) has not resolved yet -> show a loader rather than mis-routing.
   if (loading) return <FullScreenLoader label="Loading…" />
   if (!isAuthenticated) {
+    if (isBetaPreviewMode()) {
+      return children
+    }
     return <Navigate to="/login" replace state={{ from: location }} />
   }
   if (profileLoading || profile === null) {
@@ -67,6 +76,9 @@ export function RedirectIfAuthed({ children }) {
         sublabel={serverWaking ? 'The server is starting up, this may take up to 60 seconds.' : null}
       />
     )
+  }
+  if (isBetaPreviewMode()) {
+    return children
   }
   if (isAuthenticated && isAuthorized) return <Navigate to="/schedule" replace />
   if (isAuthenticated && !isAuthorized) return <Navigate to="/unauthorized" replace />
