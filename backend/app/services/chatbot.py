@@ -269,6 +269,92 @@ def _deterministic_answer_bilingual(db: Client, message: str, lang: str) -> dict
     return None
 
 
+def _pre_extract_lesson_data(message: str, db: Client,
+                             resolved_school_id: str | None = None,
+                             resolved_course_id: str | None = None) -> dict | None:
+    """Pre-extract structured lesson data from the user message for weak LLMs.
+
+    Extracts date, time, school, course using regex + DB fuzzy match.
+    Returns a dict of extracted fields, or None if nothing meaningful found.
+    """
+    extracted = {}
+
+    # Extract date (YYYY-MM-DD, DD/MM, MM/DD, or Chinese date patterns)
+    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", message)
+    if not date_match:
+        date_match = re.search(r"(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?", message)
+        if date_match:
+            month, day = date_match.group(1), date_match.group(2)
+            year = date_match.group(3) or "2026"
+            if len(year) == 2:
+                year = "20" + year
+            extracted["date"] = f"{year}-{int(month):02d}-{int(day):02d}"
+    else:
+        extracted["date"] = date_match.group(1)
+
+    # Extract time range (HH:MM-HH:MM or HH:MM to HH:MM)
+    time_range = re.search(r"(\d{1,2}:\d{2})\s*[-–~至到]\s*(\d{1,2}:\d{2})", message)
+    if time_range:
+        extracted["start_time"] = time_range.group(1)
+        extracted["end_time"] = time_range.group(2)
+    else:
+        # Single time
+        time_match = re.search(r"(\d{1,2}:\d{2})", message)
+        if time_match:
+            extracted["start_time"] = time_match.group(1)
+
+    # Extract school (use resolved_school_id if available, else fuzzy match)
+    if resolved_school_id:
+        sr = db.table("schools").select("school_id,school_name").eq("school_id", resolved_school_id).limit(1).execute().data
+        if sr:
+            extracted["school_id"] = sr[0]["school_id"]
+            extracted["school_name"] = sr[0]["school_name"]
+    else:
+        schools = db.table("schools").select("school_id,school_name").execute().data or []
+        for s in schools:
+            name = s.get("school_name", "")
+            if name and name in message:
+                extracted["school_id"] = s["school_id"]
+                extracted["school_name"] = name
+                break
+
+    # Extract course (use resolved_course_id if available, else fuzzy match)
+    if resolved_course_id:
+        cr = db.table("courses").select("course_id,course_name").eq("course_id", resolved_course_id).limit(1).execute().data
+        if cr:
+            extracted["course_id"] = cr[0]["course_id"]
+            extracted["course_name"] = cr[0]["course_name"]
+    else:
+        courses = db.table("courses").select("course_id,course_name").execute().data or []
+        for c in courses:
+            name = c.get("course_name", "")
+            if name and name in message:
+                extracted["course_id"] = c["course_id"]
+                extracted["course_name"] = name
+                break
+            # Try matching significant words (3+ chars)
+            for word in name.split():
+                if len(word) >= 3 and word in message:
+                    extracted["course_id"] = c["course_id"]
+                    extracted["course_name"] = name
+                    break
+            if "course_id" in extracted:
+                break
+
+    # Detect intent
+    create_patterns = r"開|新增|加|創建|create|add|new|開課"
+    if re.search(create_patterns, message, re.IGNORECASE):
+        extracted["intent"] = "create"
+    cancel_patterns = r"取消|delete|cancel|remove"
+    if re.search(cancel_patterns, message, re.IGNORECASE):
+        extracted["intent"] = "cancel"
+    reschedule_patterns = r"改期|reschedule|move|shift"
+    if re.search(reschedule_patterns, message, re.IGNORECASE):
+        extracted["intent"] = "reschedule"
+
+    return extracted if extracted else None
+
+
 # --- LLM (primary when reachable) ------------------------------------------
 
 def _llm_chat(
@@ -510,6 +596,11 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
     if resolved_hint:
         system += "\n" + resolved_hint
         system += "When PRE-RESOLVED SCHOOL/COURSE is shown, use BOTH the school_name/course_name AND school_id/course_id in ACTION params. Do NOT verify the name against the catalog — it is already confirmed to exist.\n"
+    # Pre-extract structured lesson data from the message to help weak LLMs
+    extracted = _pre_extract_lesson_data(message, db, resolved_school_id, resolved_course_id)
+    if extracted:
+        system += f"\nPRE-EXTRACTED DATA from user message (use this directly, do NOT ask the user for these values):\n{json.dumps(extracted, ensure_ascii=False, indent=2)}\n"
+        system += "If the user's message is a CREATE lesson request, generate the ACTION block using the PRE-EXTRACTED DATA above. Only ask clarifying questions for values that are genuinely missing.\n"
     full_messages = [{"role": "system", "content": system}]
     full_messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-4:]]
     full_messages.append({"role": "user", "content": message})
