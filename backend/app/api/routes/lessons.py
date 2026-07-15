@@ -60,13 +60,17 @@ def _do_create_lesson(db, body: LessonCreate):
     
     # Auto-generate school_id if school_name is provided and course doesn't have one
     if payload.get("school_name") and not payload.get("school_id"):
+        import re as _re
         schools = repos.list_rows(db, "schools")
-        # Fuzzy match: exact first, then substring
+        def _norm(s):
+            return _re.sub(r"[^a-z0-9]", "", (s or "").lower())
+        target = _norm(payload["school_name"])
+        # Fuzzy match: exact first, then normalized substring both directions
         existing_school = next((s for s in schools if s["school_name"] == payload["school_name"]), None)
         if not existing_school:
-            existing_school = next((s for s in schools if payload["school_name"].lower() in s.get("school_name", "").lower()), None)
+            existing_school = next((s for s in schools if target and target in _norm(s.get("school_name", ""))), None)
         if not existing_school:
-            existing_school = next((s for s in schools if s.get("school_name", "").lower() in payload["school_name"].lower()), None)
+            existing_school = next((s for s in schools if _norm(s.get("school_name", "")) and _norm(s.get("school_name", "")) in target), None)
         if existing_school:
             payload["school_id"] = existing_school["school_id"]
             payload["school_name"] = existing_school["school_name"]
