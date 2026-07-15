@@ -61,12 +61,21 @@ def _do_create_lesson(db, body: LessonCreate):
     # Auto-generate school_id if school_name is provided and course doesn't have one
     if payload.get("school_name") and not payload.get("school_id"):
         schools = repos.list_rows(db, "schools")
+        # Fuzzy match: exact first, then substring
         existing_school = next((s for s in schools if s["school_name"] == payload["school_name"]), None)
+        if not existing_school:
+            existing_school = next((s for s in schools if payload["school_name"].lower() in s.get("school_name", "").lower()), None)
+        if not existing_school:
+            existing_school = next((s for s in schools if s.get("school_name", "").lower() in payload["school_name"].lower()), None)
         if existing_school:
             payload["school_id"] = existing_school["school_id"]
+            payload["school_name"] = existing_school["school_name"]
         else:
             # Create new school with auto-generated school_id
-            new_school = repos.insert_row(db, "schools", {"school_name": payload["school_name"]})
+            new_school = repos.insert_row(db, "schools", {
+                "school_id": codes.next_school_id(db),
+                "school_name": payload["school_name"],
+            })
             if new_school:
                 payload["school_id"] = new_school["school_id"]
     
@@ -170,6 +179,7 @@ def parse_and_create_lessons(
     
     # Parse dates from the text
     lesson_entries = []
+    cancelled_count = 0
     lines = body.dates_text.strip().split('\n')
     
     date_pattern = re.compile(r'(\d{1,2})/(\d{1,2})/(\d{4})')
@@ -222,8 +232,15 @@ def parse_and_create_lessons(
         
         # Skip cancelled lessons
         if is_cancelled:
+            cancelled_count += 1
             continue
         
+        # Combine room location with parsed notes
+        all_notes = []
+        if body.location:
+            all_notes.append(body.location)
+        all_notes.extend(notes)
+
         # Create lesson entry
         lesson_entry = LessonCreate(
             date=lesson_date,
@@ -234,7 +251,7 @@ def parse_and_create_lessons(
             lesson_material_link=body.lesson_material_link,
             max_tutors=body.max_tutors,
             lesson_income=body.lesson_income,
-            notes=", ".join(notes) if notes else None,
+            notes=", ".join(all_notes) if all_notes else None,
             status="Unassigned"
         )
         lesson_entries.append(lesson_entry)
@@ -255,6 +272,7 @@ def parse_and_create_lessons(
         "errors": errors,
         "total": len(created),
         "failed": len(errors),
+        "cancelled": cancelled_count,
         "course_matched": course is not None,
         "course_id": course_id
     }

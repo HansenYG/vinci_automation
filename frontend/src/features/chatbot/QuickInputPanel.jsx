@@ -87,9 +87,9 @@ function LessonForm({ onFlash }) {
 16/7/2026(星期四)
 17/7/2026(星期五)(改為16/7)
 20/7/2026(星期一)
-21/7/2026(星期二) ( 00:00 -00:00)`,
-    default_start_time: '00:00',
-    default_end_time: '00:00',
+21/7/2026(星期二) ( 14:30 -17:30)`,
+    default_start_time: '14:30',
+    default_end_time: '17:00',
     location: '',
     location_note: 'N404',
   })
@@ -160,8 +160,8 @@ function LessonForm({ onFlash }) {
         }
         const result = await createMultiLesson(body)
         invalidate()
-        setResult({ multi: true, total: result.total, failed: result.failed })
-        onFlash?.(`Created ${result.total} lessons${result.failed > 0 ? ` (${result.failed} failed)` : ''}`)
+        setResult({ multi: true, total: result.total, failed: result.failed, cancelled: result.cancelled || 0 })
+        onFlash?.(`Created ${result.total} lessons${result.failed > 0 ? ` (${result.failed} failed)` : ''}${result.cancelled > 0 ? ` (${result.cancelled} cancelled skipped)` : ''}`)
         // Reset multi-specific fields
         setV(prev => ({ ...prev, dates_text: '', preview: [] }))
         setPreview([])
@@ -272,14 +272,14 @@ function LessonForm({ onFlash }) {
           {preview.length > 0 && (
             <div style={{ marginTop: 8, background: '#f8fafc', borderRadius: 4, padding: 8, border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--muted)' }}>
-                PARSED: {preview.length} lines
+                PARSED: {preview.filter(p => p.status === 'Active').length} active, {preview.filter(p => p.status === 'Cancelled').length} cancelled
               </div>
-              {preview.slice(0, 5).map((p, i) => (
-                <div key={i} style={{ fontSize: 11, padding: '2px 0', borderBottom: i < Math.min(4, preview.length - 1) ? '1px solid #e2e8f0' : 'none' }}>
-                  {p.date} {p.time} · {p.status}
+              {preview.slice(0, 8).map((p, i) => (
+                <div key={i} style={{ fontSize: 11, padding: '2px 0', borderBottom: i < Math.min(7, preview.length - 1) ? '1px solid #e2e8f0' : 'none', color: p.status === 'Cancelled' ? 'var(--muted)' : undefined }}>
+                  {p.date} {p.time} · {p.status}{p.notes !== '-' ? ` · ${p.notes}` : ''}
                 </div>
               ))}
-              {preview.length > 5 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>...and {preview.length - 5} more</div>}
+              {preview.length > 8 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>...and {preview.length - 8} more</div>}
             </div>
           )}
 
@@ -305,6 +305,7 @@ function LessonForm({ onFlash }) {
             <div className="announce-result">
               <strong>{result.total}</strong> lessons created
               {result.failed > 0 && <div className="announce-row">{result.failed} failed</div>}
+              {result.cancelled > 0 && <div className="announce-row">{result.cancelled} cancelled (skipped)</div>}
             </div>
           )}
         </>
