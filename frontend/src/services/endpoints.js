@@ -41,6 +41,12 @@ export const createSchool = (body) => data(api.post('/api/schools', body))
 export const getUrgentNews = () => data(api.get('/api/urgent-news'))
 export const getUrgentCount = () => data(api.get('/api/urgent-news/count'))
 
+// --- Finances ---
+export const getFinanceMonths = () => data(api.get('/api/finances/months'))
+export const getTeacherEarnings = (params = {}) => data(api.get('/api/finances/teacher-earnings', { params }))
+export const getCourseFinancials = (params = {}) => data(api.get('/api/finances/course-financials', { params }))
+export const computeSnapshot = (params = {}) => data(api.post('/api/finances/snapshot', null, { params }))
+
 // --- Chatbot ---
 export const getPresets = () => data(api.get('/api/chat/presets'))
 export const sendChat = (message, history = [], { resolvedSchoolId, resolvedCourseId } = {}) =>
