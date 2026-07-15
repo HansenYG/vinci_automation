@@ -50,6 +50,9 @@ export default function Sidebar() {
       <Item to="/schedule" label="Schedule" Icon={CalendarIcon} />
       <Item to="/lessons" label="Lesson Dashboard" Icon={DashboardIcon} />
       <Item to="/urgent" label="Urgent News" Icon={AlertIcon} badge={urgentCount} />
+      {(isAdmin ? [{ to: '/finances', label: 'Finances', Icon: MoneyIcon, phase: 'P4' }] : []).map((i) => (
+        <Item key={i.to} {...i} />
+      ))}
       <button type="button" className={'nav-item nav-item--btn' + (open ? ' active' : '')} onClick={openAssistant}>
         <ChatIcon />
         <span>Assistant</span>
@@ -57,9 +60,6 @@ export default function Sidebar() {
       </button>
 
       <div className="sidebar__section">Upcoming phases</div>
-      {(isAdmin ? [{ to: '/finances', label: 'Finances', Icon: MoneyIcon, phase: 'P4' }] : []).map((i) => (
-        <Item key={i.to} {...i} />
-      ))}
 
       {/* Signed-in user card + sign out */}
       <div className="sidebar__user">

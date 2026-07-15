@@ -10,7 +10,7 @@ export default function FinancesPage() {
   const [teachers, setTeachers] = useState([])
   const [courses, setCourses] = useState([])
   const [loading, setLoading] = useState(false)
-  const [viewMode, setViewMode] = useState('month')
+  const [viewMode, setViewMode] = useState('overall')
 
   useEffect(() => {
     getFinanceMonths()
@@ -26,19 +26,33 @@ export default function FinancesPage() {
   }, [])
 
   useEffect(() => {
-    if (!selected && viewMode !== 'overall') return
-    setLoading(true)
-    const request = viewMode === 'overall'
-      ? Promise.all([
-          getTeacherEarnings({}).catch(() => ({ teachers: [] })),
-          getCourseFinancials({}).catch(() => ({ courses: [] })),
-        ])
-      : Promise.all([
-          getTeacherEarnings({ year: selected.year, month: selected.month }).catch(() => ({ teachers: [] })),
-          getCourseFinancials({ year: selected.year, month: selected.month }).catch(() => ({ courses: [] })),
-        ])
+    if (viewMode === 'overall') {
+      setLoading(true)
+      Promise.all([
+        getTeacherEarnings({}).catch(() => ({ teachers: [] })),
+        getCourseFinancials({}).catch(() => ({ courses: [] })),
+      ])
+        .then(([tRes, cRes]) => {
+          const nextTeachers = Array.isArray(tRes?.teachers) ? tRes.teachers : []
+          const nextCourses = Array.isArray(cRes?.courses) ? cRes.courses : []
+          setTeachers(nextTeachers)
+          setCourses(nextCourses)
+        })
+        .finally(() => setLoading(false))
+      return
+    }
 
-    request
+    if (!selected) {
+      setTeachers([])
+      setCourses([])
+      return
+    }
+
+    setLoading(true)
+    Promise.all([
+      getTeacherEarnings({ year: selected.year, month: selected.month }).catch(() => ({ teachers: [] })),
+      getCourseFinancials({ year: selected.year, month: selected.month }).catch(() => ({ courses: [] })),
+    ])
       .then(([tRes, cRes]) => {
         const nextTeachers = Array.isArray(tRes?.teachers) ? tRes.teachers : []
         const nextCourses = Array.isArray(cRes?.courses) ? cRes.courses : []
@@ -70,6 +84,24 @@ export default function FinancesPage() {
     setLoading(false)
   }
 
+  const handleViewModeChange = (nextMode) => {
+    setViewMode(nextMode)
+    if (nextMode === 'month' && !selected && months.length > 0) {
+      const latest = months[0]
+      setSelected({ year: latest.year, month: latest.month })
+    }
+  }
+
+  const handleMonthChange = (event) => {
+    const value = event.target.value
+    if (!value) {
+      setSelected(null)
+      return
+    }
+    const [year, month] = value.split('-').map(Number)
+    setSelected({ year, month })
+  }
+
   const headerLabel = viewMode === 'overall'
     ? 'Overall totals'
     : selected ? `${selected.year}-${String(selected.month).padStart(2, '0')}` : 'Select a period'
@@ -81,8 +113,8 @@ export default function FinancesPage() {
         subtitle="Read-only tutor earnings and course financials for the latest month, previous months, and overall totals."
         actions={[
           <div key="seg" className="segmented">
-            <button className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Selected month</button>
-            <button className={viewMode === 'overall' ? 'active' : ''} onClick={() => setViewMode('overall')}>Overall</button>
+            <button className={viewMode === 'month' ? 'active' : ''} onClick={() => handleViewModeChange('month')}>Selected month</button>
+            <button className={viewMode === 'overall' ? 'active' : ''} onClick={() => handleViewModeChange('overall')}>Overall</button>
           </div>,
           <button key="refresh" className="btn btn--primary btn--sm" onClick={refreshSnapshot} disabled={loading}>
             Recompute snapshot
@@ -96,12 +128,7 @@ export default function FinancesPage() {
             {viewMode === 'month' && (
               <>
                 <label className="muted" htmlFor="finance-month">Snapshot</label>
-                <select id="finance-month" className="ld-filter-select" value={selected ? `${selected.year}-${selected.month}` : ''} onChange={(e) => {
-                  const v = e.target.value
-                  if (!v) return setSelected(null)
-                  const [y, m] = v.split('-').map(Number)
-                  setSelected({ year: y, month: m })
-                }}>
+                <select id="finance-month" className="ld-filter-select" value={selected ? `${selected.year}-${selected.month}` : ''} onChange={handleMonthChange}>
                   <option value="">Select month</option>
                   {months.map((m) => (
                     <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
@@ -117,6 +144,9 @@ export default function FinancesPage() {
 
         {(selected || viewMode === 'overall') ? (
           <div>
+            {!loading && viewMode === 'month' && selected && teachers.length === 0 && courses.length === 0 ? (
+              <div className="card empty">No snapshot data is available for this month yet. Try recomputing the snapshot.</div>
+            ) : null}
             <TeacherEarnings rows={teachers} loading={loading} viewMode={viewMode} selected={selected} />
             <CourseFinancials rows={courses} loading={loading} viewMode={viewMode} selected={selected} />
           </div>

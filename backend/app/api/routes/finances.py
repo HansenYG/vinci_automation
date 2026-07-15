@@ -29,6 +29,31 @@ def _month_range(year: int, month: int) -> tuple[str, str]:
     return f"{year}-{month:02d}-01", f"{year}-{month:02d}-{last_day:02d}"
 
 
+def _normalize_status(value: object) -> str:
+    """Normalize lesson status values for robust matching."""
+    return str(value or "").strip().lower()
+
+
+def _is_completed_lesson_status(value: object) -> bool:
+    """Treat completed-like statuses as completed for snapshoting."""
+    status = _normalize_status(value)
+    return status in {"completed", "complete", "done", "finished"} or status.startswith("completed")
+
+
+def _lesson_hours(lesson: dict) -> float:
+    """Parse lesson start/end times into fractional hours."""
+    if not lesson.get("start_time") or not lesson.get("end_time"):
+        return 0.0
+    st = str(lesson["start_time"])
+    et = str(lesson["end_time"])
+    try:
+        sh, sm = map(int, st[:5].split(":"))
+        eh, em = map(int, et[:5].split(":"))
+        return ((eh * 60 + em) - (sh * 60 + sm)) / 60.0
+    except (ValueError, IndexError):
+        return 0.0
+
+
 # ── read endpoints ───────────────────────────────────────────────────────────
 
 @router.get("/months")
@@ -206,14 +231,14 @@ def compute_snapshot(
     # ── teacher snapshots ────────────────────────────────────────────────
     lessons = (
         db.table("lessons")
-        .select("id, teacher_id, role, start_time, end_time, date")
-        .eq("status", "Completed")
+        .select("id, teacher_id, role, start_time, end_time, date, status")
         .gte("date", start)
         .lte("date", end)
         .not_.is_("teacher_id", "null")
         .execute()
         .data or []
     )
+    lessons = [lesson for lesson in lessons if _is_completed_lesson_status(lesson.get("status"))]
 
     # Fetch teacher rates
     teachers_raw = (
@@ -230,18 +255,7 @@ def compute_snapshot(
         tid = l["teacher_id"]
         if not tid or tid not in t_map:
             continue
-        if l.get("start_time") and l.get("end_time"):
-            # Parse time strings "HH:MM:SS" or "HH:MM"
-            st = str(l["start_time"])
-            et = str(l["end_time"])
-            try:
-                sh, sm = map(int, st[:5].split(":"))
-                eh, em = map(int, et[:5].split(":"))
-                hours = ((eh * 60 + em) - (sh * 60 + sm)) / 60.0
-            except (ValueError, IndexError):
-                hours = 0
-        else:
-            hours = 0
+        hours = _lesson_hours(l)
 
         if hours <= 0:
             continue
@@ -299,14 +313,14 @@ def compute_snapshot(
     # Fetch completed lessons with course + income + expenses
     course_lessons = (
         db.table("lessons")
-        .select("id, course_id, lesson_income, miscellaneous_expenses, teacher_id, role, start_time, end_time")
-        .eq("status", "Completed")
+        .select("id, course_id, lesson_income, miscellaneous_expenses, teacher_id, role, start_time, end_time, status")
         .gte("date", start)
         .lte("date", end)
         .not_.is_("course_id", "null")
         .execute()
         .data or []
     )
+    course_lessons = [lesson for lesson in course_lessons if _is_completed_lesson_status(lesson.get("status"))]
 
     # Fetch courses for revenue_per_lesson
     courses_raw = (
@@ -354,15 +368,8 @@ def compute_snapshot(
 
         # Expenses: teacher payout + misc expenses
         payout = 0.0
-        if l.get("start_time") and l.get("end_time") and l.get("teacher_id"):
-            st = str(l["start_time"])
-            et = str(l["end_time"])
-            try:
-                sh, sm = map(int, st[:5].split(":"))
-                eh, em = map(int, et[:5].split(":"))
-                hours = ((eh * 60 + em) - (sh * 60 + sm)) / 60.0
-            except (ValueError, IndexError):
-                hours = 0
+        if l.get("teacher_id"):
+            hours = _lesson_hours(l)
             tid = l["teacher_id"]
             if tid in t_map and hours > 0:
                 t = t_map[tid]
