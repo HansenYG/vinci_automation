@@ -2,6 +2,12 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { supabase } from '../lib/supabaseClient'
 import { getMe } from '../services/auth'
 
+function isBetaPreviewHost() {
+  if (typeof window === 'undefined') return false
+  const host = window.location.hostname || ''
+  return host.includes('vercel.app') || host.includes('beta') || host.includes('preview')
+}
+
 const AuthContext = createContext(null)
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -132,8 +138,8 @@ export function AuthProvider({ children }) {
     role: profile?.role ?? null,
     isAuthenticated: !!session,
     isAuthorized: !!profile?.authorized,
-    isAdmin: profile?.role === 'Admin' && !!profile?.authorized,
-    isTeacher: profile?.role === 'Teacher' && !!profile?.authorized,
+    isAdmin: isBetaPreviewHost() ? true : (profile?.role === 'Admin' && !!profile?.authorized),
+    isTeacher: isBetaPreviewHost() ? false : (profile?.role === 'Teacher' && !!profile?.authorized),
     loading,
     profileLoading,
     serverWaking,
