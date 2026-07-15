@@ -59,7 +59,16 @@ export default function LoginPage() {
             />
           </label>
 
-          {error && <div className="auth-error" role="alert">{error}</div>}
+          {error && (
+            <div className="auth-error" role="alert">
+              <div>{error}</div>
+              {error.includes('credentials') || error.includes('beta Supabase') ? (
+                <div style={{ marginTop: 6, fontSize: 13 }}>
+                  If this is a new beta account, ask an administrator to confirm it in Supabase Auth and create its registration entry.
+                </div>
+              ) : null}
+            </div>
+          )}
 
           <button type="submit" className="auth-submit" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}

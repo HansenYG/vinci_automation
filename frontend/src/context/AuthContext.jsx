@@ -105,7 +105,16 @@ export function AuthProvider({ children }) {
     setError(null)
     const { error: e } = await supabase.auth.signInWithPassword({ email, password })
     if (e) {
-      setError(e.message)
+      const normalized = (e.message || '').toLowerCase()
+      let friendly = e.message
+      if (normalized.includes('invalid login credentials') || normalized.includes('invalid_grant')) {
+        friendly = 'These sign-in credentials are not recognized for the beta Supabase project.'
+      } else if (normalized.includes('email not confirmed') || normalized.includes('confirm')) {
+        friendly = 'This account needs email confirmation before it can sign in.'
+      } else if (normalized.includes('rate limit') || normalized.includes('too many requests')) {
+        friendly = 'Too many sign-in attempts. Please wait a moment and try again.'
+      }
+      setError(friendly)
       throw e
     }
   }, [])

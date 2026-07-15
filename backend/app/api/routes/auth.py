@@ -198,6 +198,44 @@ def _is_vinci_email(email: str) -> bool:
     return domain == settings.VINCI_EMAIL_DOMAIN.lower()
 
 
+def _upsert_app_user_from_payload(payload: dict[str, Any]) -> AppUser | None:
+    """Best-effort repair path for beta auth accounts that are missing app_users rows.
+
+    This is intentionally limited to valid Supabase sessions with a Vinci email,
+    so it only helps trusted admin sign-ins and never touches non-Vinci users.
+    """
+    user_id = payload.get("sub")
+    email = (payload.get("email") or "").strip().lower()
+    if not user_id or not email or not _is_vinci_email(email):
+        return None
+
+    try:
+        db = get_supabase()
+    except RuntimeError:
+        return None
+
+    try:
+        row = {
+            "user_id": user_id,
+            "email": email,
+            "role": "Admin",
+            "is_vinci_email": True,
+            "display_name": (email.split("@")[0] if email else user_id),
+        }
+        db.table("app_users").upsert(row, on_conflict="user_id").execute()
+        return AppUser(
+            user_id=user_id,
+            email=email,
+            role="Admin",
+            is_vinci_email=True,
+            teacher_id=None,
+            display_name=row["display_name"],
+            authorized=True,
+        )
+    except Exception:
+        return None
+
+
 # ----------------------------------------------------------------- dependencies
 async def get_token_payload(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
@@ -256,6 +294,9 @@ async def get_current_user(
         return _from_email()
 
     if not row:
+        repaired = _upsert_app_user_from_payload(payload)
+        if repaired is not None:
+            return repaired
         return _from_email()
 
     u = row[0]
