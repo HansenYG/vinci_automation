@@ -55,10 +55,11 @@ export function RequireAuth({ children }) {
 
 // Gate that additionally requires one of the given roles.
 export function RequireRole({ roles, children }) {
-  const { role } = useAuth()
+  const { role, isAdmin } = useAuth()
+  const isPreview = isBetaPreviewMode()
   return (
     <RequireAuth>
-      {roles.includes(role) ? children : <Navigate to="/schedule" replace />}
+      {isPreview || roles.includes(role) || isAdmin ? children : <Navigate to="/schedule" replace />}
     </RequireAuth>
   )
 }

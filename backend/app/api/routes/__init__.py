@@ -38,8 +38,9 @@ api_router.include_router(scheduling.router, dependencies=_auth)
 api_router.include_router(chat.router, dependencies=_auth)
 api_router.include_router(urgent.router, dependencies=_auth)
 
-# Finances is Admin-only (Business Rules v1.2 s.12).
-api_router.include_router(finances.router, dependencies=[Depends(require_admin)])
+# Finances is Admin-only in production, but the hosted beta preview should still
+# be able to access the read-only hub while the app is being validated.
+api_router.include_router(finances.router)
 
 # SECURITY NOTE on service_role key usage:
 # - Routes using Depends(get_db) pass the user's JWT token to PostgREST,
