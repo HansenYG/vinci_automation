@@ -279,29 +279,58 @@ def _pre_extract_lesson_data(message: str, db: Client,
     """
     extracted = {}
 
-    # Extract date (YYYY-MM-DD, DD/MM, MM/DD, or Chinese date patterns)
+    # Extract date — try multiple formats
+    # Format 1: YYYY-MM-DD
     date_match = re.search(r"(\d{4}-\d{2}-\d{2})", message)
-    if not date_match:
-        date_match = re.search(r"(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?", message)
-        if date_match:
-            month, day = date_match.group(1), date_match.group(2)
-            year = date_match.group(3) or "2026"
-            if len(year) == 2:
-                year = "20" + year
-            extracted["date"] = f"{year}-{int(month):02d}-{int(day):02d}"
-    else:
+    if date_match:
         extracted["date"] = date_match.group(1)
+    else:
+        # Format 2: Chinese date — 7月20號, 7月20日, 20號7月
+        cn_date = re.search(r"(\d{1,2})\s*月\s*(\d{1,2})\s*[號日]?", message)
+        if cn_date:
+            month, day = cn_date.group(1), cn_date.group(2)
+            extracted["date"] = f"2026-{int(month):02d}-{int(day):02d}"
+        else:
+            # Format 3: DD/MM or MM/DD
+            slash_date = re.search(r"(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?", message)
+            if slash_date:
+                month, day = slash_date.group(1), slash_date.group(2)
+                year = slash_date.group(3) or "2026"
+                if len(year) == 2:
+                    year = "20" + year
+                extracted["date"] = f"{year}-{int(month):02d}-{int(day):02d}"
 
-    # Extract time range (HH:MM-HH:MM or HH:MM to HH:MM)
-    time_range = re.search(r"(\d{1,2}:\d{2})\s*[-–~至到]\s*(\d{1,2}:\d{2})", message)
+    # Extract time — try multiple formats
+    # Format 1: HH:MM-HH:MM or HH:MM to HH:MM
+    time_range = re.search(r"(\d{1,2}:\d{2})\s*[-–~至到]+\s*(\d{1,2}:\d{2})", message)
     if time_range:
         extracted["start_time"] = time_range.group(1)
         extracted["end_time"] = time_range.group(2)
     else:
-        # Single time
-        time_match = re.search(r"(\d{1,2}:\d{2})", message)
-        if time_match:
-            extracted["start_time"] = time_match.group(1)
+        # Format 2: Chinese time — 10點到11點, 10點半
+        cn_time_range = re.search(
+            r"(\d{1,2})\s*點\s*(半|(\d{1,2})\s*分?)?\s*[-–~至到]+\s*(\d{1,2})\s*點\s*(半|(\d{1,2})\s*分?)?",
+            message
+        )
+        if cn_time_range:
+            start_h = int(cn_time_range.group(1))
+            start_m = 30 if cn_time_range.group(2) == "半" else (int(cn_time_range.group(3)) if cn_time_range.group(3) else 0)
+            end_h = int(cn_time_range.group(4))
+            end_m = 30 if cn_time_range.group(5) == "半" else (int(cn_time_range.group(6)) if cn_time_range.group(6) else 0)
+            extracted["start_time"] = f"{start_h:02d}:{start_m:02d}"
+            extracted["end_time"] = f"{end_h:02d}:{end_m:02d}"
+        else:
+            # Format 3: Single HH:MM
+            time_match = re.search(r"(\d{1,2}:\d{2})", message)
+            if time_match:
+                extracted["start_time"] = time_match.group(1)
+            else:
+                # Format 4: Chinese single time — 10點, 3點半
+                cn_time = re.search(r"(\d{1,2})\s*點\s*(半|(\d{1,2})\s*分?)?", message)
+                if cn_time:
+                    h = int(cn_time.group(1))
+                    m = 30 if cn_time.group(2) == "半" else (int(cn_time.group(3)) if cn_time.group(3) else 0)
+                    extracted["start_time"] = f"{h:02d}:{m:02d}"
 
     # Extract school (use resolved_school_id if available, else fuzzy match)
     if resolved_school_id:
@@ -600,7 +629,9 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
     extracted = _pre_extract_lesson_data(message, db, resolved_school_id, resolved_course_id)
     if extracted:
         system += f"\nPRE-EXTRACTED DATA from user message (use this directly, do NOT ask the user for these values):\n{json.dumps(extracted, ensure_ascii=False, indent=2)}\n"
-        system += "If the user's message is a CREATE lesson request, generate the ACTION block using the PRE-EXTRACTED DATA above. Only ask clarifying questions for values that are genuinely missing.\n"
+        system += "CRITICAL: The PRE-EXTRACTED DATA above was automatically parsed from the user's message. "
+        system += "Use these values DIRECTLY in your response. Do NOT ask the user to confirm or repeat information that is already in the PRE-EXTRACTED DATA. "
+        system += "If the intent is 'create' and all required fields (school, course, date) are present, output the ACTION block immediately.\n"
     full_messages = [{"role": "system", "content": system}]
     full_messages += [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in history[-4:]]
     full_messages.append({"role": "user", "content": message})
