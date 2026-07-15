@@ -33,10 +33,18 @@ def _month_range(year: int, month: int) -> tuple[str, str]:
 
 @router.get("/months")
 def list_months(db: SyncPostgrestClient = Depends(get_db)):
-    """Return distinct (year, month) pairs that have snapshot data."""
+    """Return distinct (year, month) pairs that have snapshot data from either table."""
     try:
-        rows = (
+        teacher_rows = (
             db.table("teacher_salary_snapshots")
+            .select("year, month")
+            .order("year", desc=True)
+            .order("month", desc=True)
+            .execute()
+            .data or []
+        )
+        course_rows = (
+            db.table("course_financial_snapshots")
             .select("year, month")
             .order("year", desc=True)
             .order("month", desc=True)
@@ -45,11 +53,13 @@ def list_months(db: SyncPostgrestClient = Depends(get_db)):
         )
         seen: set[tuple[int, int]] = set()
         result = []
-        for r in rows:
-            key = (r["year"], r["month"])
-            if key not in seen:
-                seen.add(key)
-                result.append({"year": r["year"], "month": r["month"]})
+        for rows in (teacher_rows, course_rows):
+            for r in rows:
+                key = (r["year"], r["month"])
+                if key not in seen:
+                    seen.add(key)
+                    result.append({"year": r["year"], "month": r["month"]})
+        result.sort(key=lambda item: (item["year"], item["month"]), reverse=True)
         return result
     except Exception:
         return []
