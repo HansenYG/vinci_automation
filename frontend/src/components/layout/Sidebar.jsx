@@ -1,13 +1,16 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { AlertIcon, CalendarIcon, ChatIcon, DashboardIcon, MoneyIcon } from './Icons'
 import { useDock } from '../../features/chatbot/dockContext'
 import { useAuth } from '../../context/AuthContext'
+import { getUrgentCount } from '../../services/endpoints'
 
-function Item({ to, label, Icon, phase }) {
+function Item({ to, label, Icon, phase, badge }) {
   return (
     <NavLink to={to} className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
       <Icon />
       <span>{label}</span>
+      {badge > 0 && <span className="nav-item__badge">{badge}</span>}
       {phase && <span className="nav-item__phase">{phase}</span>}
     </NavLink>
   )
@@ -24,16 +27,17 @@ function initials(name, email) {
 export default function Sidebar() {
   const { open, setOpen, setTab } = useDock()
   const { profile, user, role, isAdmin, signOut } = useAuth()
+  const [urgentCount, setUrgentCount] = useState(0)
   const openAssistant = () => { setTab('chat'); setOpen(true) }
 
   const displayName = profile?.display_name || user?.email || 'User'
   const email = profile?.email || user?.email || ''
 
-  // Upcoming phases, filtered by role (Finances is Admin-only, s.12).
-  const future = [
-    ...(isAdmin ? [{ to: '/finances', label: 'Finances', Icon: MoneyIcon, phase: 'P4' }] : []),
-    { to: '/urgent', label: 'Urgent News', Icon: AlertIcon, phase: 'P5' },
-  ]
+  useEffect(() => {
+    getUrgentCount()
+      .then((d) => setUrgentCount(d?.count || 0))
+      .catch(() => {})
+  }, [])
 
   return (
     <aside className="sidebar">
@@ -45,6 +49,7 @@ export default function Sidebar() {
       <div className="sidebar__section">Live</div>
       <Item to="/schedule" label="Schedule" Icon={CalendarIcon} />
       <Item to="/lessons" label="Lesson Dashboard" Icon={DashboardIcon} />
+      <Item to="/urgent" label="Urgent News" Icon={AlertIcon} badge={urgentCount} />
       <button type="button" className={'nav-item nav-item--btn' + (open ? ' active' : '')} onClick={openAssistant}>
         <ChatIcon />
         <span>Assistant</span>
@@ -52,7 +57,9 @@ export default function Sidebar() {
       </button>
 
       <div className="sidebar__section">Upcoming phases</div>
-      {future.map((i) => <Item key={i.to} {...i} />)}
+      {(isAdmin ? [{ to: '/finances', label: 'Finances', Icon: MoneyIcon, phase: 'P4' }] : []).map((i) => (
+        <Item key={i.to} {...i} />
+      ))}
 
       {/* Signed-in user card + sign out */}
       <div className="sidebar__user">

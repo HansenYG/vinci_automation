@@ -39,6 +39,7 @@ export const createSchool = (body) => data(api.post('/api/schools', body))
 
 // --- Urgent news ---
 export const getUrgentNews = () => data(api.get('/api/urgent-news'))
+export const getUrgentCount = () => data(api.get('/api/urgent-news/count'))
 
 // --- Chatbot ---
 export const getPresets = () => data(api.get('/api/chat/presets'))
