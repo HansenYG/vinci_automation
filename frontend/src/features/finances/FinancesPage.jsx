@@ -7,6 +7,7 @@ import CourseFinancials from './CourseFinancials'
 export default function FinancesPage() {
   const [months, setMonths] = useState([])
   const [selected, setSelected] = useState(null)
+  const [draftSelection, setDraftSelection] = useState(null)
   const [teachers, setTeachers] = useState([])
   const [courses, setCourses] = useState([])
   const [loading, setLoading] = useState(false)
@@ -19,7 +20,9 @@ export default function FinancesPage() {
         setMonths(nextMonths)
         if (nextMonths.length > 0) {
           const latest = nextMonths[0]
-          setSelected({ year: latest.year, month: latest.month })
+          const latestSelection = { year: latest.year, month: latest.month }
+          setSelected(latestSelection)
+          setDraftSelection(latestSelection)
         }
       })
       .catch(() => setMonths([]))
@@ -86,20 +89,49 @@ export default function FinancesPage() {
 
   const handleViewModeChange = (nextMode) => {
     setViewMode(nextMode)
-    if (nextMode === 'month' && !selected && months.length > 0) {
-      const latest = months[0]
-      setSelected({ year: latest.year, month: latest.month })
+    if (nextMode === 'month') {
+      const nextSelection = selected || draftSelection || (months[0] ? { year: months[0].year, month: months[0].month } : null)
+      if (nextSelection) {
+        setDraftSelection(nextSelection)
+        setSelected(nextSelection)
+      }
+    }
+  }
+
+  const applyPeriodSelection = () => {
+    if (!draftSelection || draftSelection.month == null) {
+      setSelected(null)
+      return
+    }
+    setSelected({ year: draftSelection.year, month: draftSelection.month })
+  }
+
+  const yearOptions = Array.from(new Set(months.map((m) => m.year))).sort((a, b) => b - a)
+  const selectedYear = draftSelection?.year ?? selected?.year ?? yearOptions[0] ?? null
+  const monthOptions = months
+    .filter((m) => m.year === selectedYear)
+    .sort((a, b) => b.month - a.month)
+
+  const handleYearChange = (event) => {
+    const year = Number(event.target.value)
+    const nextSelection = year ? { year, month: null } : null
+    setDraftSelection(nextSelection)
+    if (!nextSelection) {
+      setSelected(null)
     }
   }
 
   const handleMonthChange = (event) => {
-    const value = event.target.value
-    if (!value) {
+    const month = Number(event.target.value)
+    if (!selectedYear || !month) {
+      const nextSelection = selectedYear ? { year: selectedYear, month: null } : null
+      setDraftSelection(nextSelection)
       setSelected(null)
       return
     }
-    const [year, month] = value.split('-').map(Number)
-    setSelected({ year, month })
+    const nextSelection = { year: selectedYear, month }
+    setDraftSelection(nextSelection)
+    setSelected(nextSelection)
   }
 
   const headerLabel = viewMode === 'overall'
@@ -127,15 +159,27 @@ export default function FinancesPage() {
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             {viewMode === 'month' && (
               <>
-                <label className="muted" htmlFor="finance-month">Snapshot</label>
-                <select id="finance-month" className="ld-filter-select" value={selected ? `${selected.year}-${selected.month}` : ''} onChange={handleMonthChange}>
+                <label className="muted" htmlFor="finance-year">Year</label>
+                <select id="finance-year" className="ld-filter-select" value={selectedYear ?? ''} onChange={handleYearChange}>
+                  <option value="">Select year</option>
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+
+                <label className="muted" htmlFor="finance-month">Month</label>
+                <select id="finance-month" className="ld-filter-select" value={draftSelection && draftSelection.month != null ? draftSelection.month : ''} onChange={handleMonthChange}>
                   <option value="">Select month</option>
-                  {months.map((m) => (
-                    <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
-                      {m.year}-{String(m.month).padStart(2, '0')}
+                  {monthOptions.map((m) => (
+                    <option key={`${m.year}-${m.month}`} value={m.month}>
+                      {String(m.month).padStart(2, '0')}
                     </option>
                   ))}
                 </select>
+
+                <button className="btn btn--primary btn--sm" onClick={applyPeriodSelection} disabled={!draftSelection || draftSelection.month == null}>
+                  View period
+                </button>
               </>
             )}
             <span className="badge blue">{headerLabel}</span>
