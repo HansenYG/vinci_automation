@@ -30,7 +30,8 @@ from supabase import Client
 
 from app.core.config import settings
 from app.services import repos, codes
-from app.services.translator import has_chinese, to_english, from_english, batch_to_english
+from app.services.translator import has_chinese, batch_to_english
+from app.services.translator_v2 import detect_language, to_english as to_english_v2, _to_chinese
 
 # Simple in-memory cache for repeated queries (cache up to 100 most recent queries)
 _RESPONSE_CACHE = {}
@@ -122,6 +123,120 @@ def _deterministic_answer(db: Client, message: str) -> dict | None:
         rows = repos.list_rows(db, "schools", limit=50)
         lines = [f"- {r['school_name']} ({r['school_id']})" for r in rows]
         reply = f"{len(rows)} school(s):\n" + "\n".join(lines) if rows else "No schools found."
+        return {"reply": reply, "source": "db", "data": rows}
+
+    return None
+
+
+# --- Bilingual deterministic answers (Cantonese / Mandarin keywords) --------
+
+# Map of Cantonese/Mandarin keywords → English query keywords
+_BILINGUAL_KEYWORDS: dict[str, list[str]] = {
+    "unassigned": ["未分配", "冇導師", "無導師", "冇人", "未安排", "冇安排"],
+    "urgent": ["緊急", "急", "快到期", "即刻", "即時"],
+    "today": ["今日", "今天"],
+    "tomorrow": ["聽日", "明天"],
+    "yesterday": ["尋日", "昨天"],
+    "count": ["幾多", "幾堂", "總數", "有幾多", "幾間"],
+    "list_teachers": ["列出老師", "顯示老師", "睇老師", "老師列表"],
+    "list_courses": ["列出課程", "顯示課程", "睇課程", "課程列表"],
+    "list_schools": ["列出學校", "顯示學校", "睇學校", "學校列表"],
+}
+
+
+def _deterministic_answer_bilingual(db: Client, message: str, lang: str) -> dict | None:
+    """Fast rule-based responses for common Cantonese/Mandarin queries."""
+    m = message
+
+    # Unassigned lessons
+    if any(k in m for k in _BILINGUAL_KEYWORDS["unassigned"]):
+        rows = repos.list_unassigned(db, limit=50)
+        lines = [
+            f"- {r['lesson_code']} · {r.get('course_name') or '?'} · {r['lesson_date']} ({r['color']})"
+            for r in rows
+        ]
+        reply = f"{len(rows)} unassigned lesson(s):\n" + "\n".join(lines) if rows else "No unassigned lessons."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
+        return {"reply": reply, "source": "db", "data": rows}
+
+    # Urgent lessons
+    if any(k in m for k in _BILINGUAL_KEYWORDS["urgent"]):
+        rows = db.table("urgent_news").select("*").execute().data or []
+        lines = [
+            f"- {r['lesson_code']} · {r.get('course_name') or '?'} · {r['lesson_date']} · {r['reason']}"
+            for r in rows
+        ]
+        reply = f"{len(rows)} urgent item(s):\n" + "\n".join(lines) if rows else "Nothing urgent within a week."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
+        return {"reply": reply, "source": "db", "data": rows}
+
+    # Today's schedule
+    if any(k in m for k in _BILINGUAL_KEYWORDS["today"]):
+        today = _tz_today().isoformat()
+        rows = repos.list_schedule(db, today, today)
+        lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
+        reply = f"{len(rows)} lesson(s) today:\n" + "\n".join(lines) if rows else "No lessons scheduled today."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
+        return {"reply": reply, "source": "db", "data": rows}
+
+    # Tomorrow's schedule
+    if any(k in m for k in _BILINGUAL_KEYWORDS["tomorrow"]):
+        from datetime import timedelta
+        tomorrow = (_tz_today() + timedelta(days=1)).isoformat()
+        rows = repos.list_schedule(db, tomorrow, tomorrow)
+        lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
+        reply = f"{len(rows)} lesson(s) tomorrow:\n" + "\n".join(lines) if rows else "No lessons tomorrow."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
+        return {"reply": reply, "source": "db", "data": rows}
+
+    # Yesterday's schedule
+    if any(k in m for k in _BILINGUAL_KEYWORDS["yesterday"]):
+        from datetime import timedelta
+        yesterday = (_tz_today() - timedelta(days=1)).isoformat()
+        rows = repos.list_schedule(db, yesterday, yesterday)
+        lines = [f"- {r.get('start_time') or ''} {r.get('course_name') or '?'} · {r['status']}" for r in rows]
+        reply = f"{len(rows)} lesson(s) yesterday:\n" + "\n".join(lines) if rows else "No lessons yesterday."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
+        return {"reply": reply, "source": "db", "data": rows}
+
+    # Count/summary
+    if any(k in m for k in _BILINGUAL_KEYWORDS["count"]):
+        c = _counts(db)
+        reply = f"Schools: {c['schools']}, Teachers: {c['teachers']}, Courses: {c['courses']}, Lessons: {c['lessons']}."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
+        return {"reply": reply, "source": "db", "data": c}
+
+    # List teachers
+    if any(k in m for k in _BILINGUAL_KEYWORDS["list_teachers"]):
+        rows = repos.list_rows(db, "teachers", limit=50)
+        lines = [f"- {r['teacher_name']} ({r['teacher_id']})" for r in rows]
+        reply = f"{len(rows)} teacher(s):\n" + "\n".join(lines) if rows else "No teachers found."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
+        return {"reply": reply, "source": "db", "data": rows}
+
+    # List courses
+    if any(k in m for k in _BILINGUAL_KEYWORDS["list_courses"]):
+        rows = repos.list_rows(db, "courses", limit=50)
+        lines = [f"- {r['course_name']} ({r['course_id']})" for r in rows]
+        reply = f"{len(rows)} course(s):\n" + "\n".join(lines) if rows else "No courses found."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
+        return {"reply": reply, "source": "db", "data": rows}
+
+    # List schools
+    if any(k in m for k in _BILINGUAL_KEYWORDS["list_schools"]):
+        rows = repos.list_rows(db, "schools", limit=50)
+        lines = [f"- {r['school_name']} ({r['school_id']})" for r in rows]
+        reply = f"{len(rows)} school(s):\n" + "\n".join(lines) if rows else "No schools found."
+        if lang != "en":
+            reply = _to_chinese(reply, lang)
         return {"reply": reply, "source": "db", "data": rows}
 
     return None
@@ -355,13 +470,7 @@ def _llm_reply(db: Client, message: str, history: list[dict], *, lang: bool = Fa
         f"UPCOMING lessons: {upcoming}\n"
     )
     # Inject pre-resolved school/course from frontend dropdown selection
-    # If no frontend IDs, try server-side fuzzy match from message text
-    if not resolved_school_id or not resolved_course_id:
-        auto_sid, auto_cid = _fuzzy_resolve_names(message, db)
-        if not resolved_school_id:
-            resolved_school_id = auto_sid
-        if not resolved_course_id:
-            resolved_course_id = auto_cid
+    # Fuzzy resolution is already done in answer() — just inject the hint here
     resolved_hint = ""
     if resolved_school_id:
         sr = db.table("schools").select("school_id,school_name").eq("school_id", resolved_school_id).limit(1).execute().data
@@ -410,30 +519,47 @@ def _set_cached_response(cache_key: str, response: dict):
 def answer(db: Client, message: str, history: list[dict] | None = None,
            *, resolved_school_id: str | None = None,
            resolved_course_id: str | None = None) -> dict:
-    lang = has_chinese(message)
-    eng_msg = message
+    lang = detect_language(message)
     eng_history = history or []
-    
-    # Check cache first for repeated queries
-    cache_key = _get_cache_key(eng_msg, eng_history)
+
+    # 1. Try bilingual deterministic FIRST (instant for common Cantonese/Mandarin queries)
+    if lang != "en":
+        bilingual = _deterministic_answer_bilingual(db, message, lang)
+        if bilingual:
+            bilingual["cached"] = False
+            return bilingual
+
+    # 2. Translate user message to English for LLM
+    eng_msg = to_english_v2(message, lang) if lang != "en" else message
+
+    # 3. Server-side fuzzy resolution on ORIGINAL message (Chinese names live in DB)
+    if not resolved_school_id or not resolved_course_id:
+        auto_sid, auto_cid = _fuzzy_resolve_names(message, db)
+        if not resolved_school_id:
+            resolved_school_id = auto_sid
+        if not resolved_course_id:
+            resolved_course_id = auto_cid
+
+    # 4. Check cache (key uses original message for cache hits on repeated Chinese input)
+    cache_key = _get_cache_key(message, eng_history)
     cached = _get_cached_response(cache_key)
     if cached:
-        if lang and cached.get("reply"):
-            cached["reply"] = from_english(cached["reply"], lang)
+        if lang != "en" and cached.get("reply"):
+            cached["reply"] = _to_chinese(cached["reply"], lang)
         cached["cached"] = True
         return cached
-    
-    # Try rule-based responses FIRST for instant results (common queries)
+
+    # 5. Try English deterministic answers
     rule_result = _deterministic_answer(db, eng_msg)
     if rule_result:
-        if lang and rule_result.get("reply"):
-            rule_result["reply"] = from_english(rule_result["reply"], lang)
+        if lang != "en" and rule_result.get("reply"):
+            rule_result["reply"] = _to_chinese(rule_result["reply"], lang)
         rule_result["cached"] = False
         _set_cached_response(cache_key, rule_result)
         return rule_result
-    
-    # Fall back to LLM for complex queries
-    res = _llm_reply(db, eng_msg, eng_history or [], lang=lang,
+
+    # 6. LLM path (now in English, with dual-name catalog for matching)
+    res = _llm_reply(db, eng_msg, eng_history or [], lang=True,
                      resolved_school_id=resolved_school_id,
                      resolved_course_id=resolved_course_id)
     if res["source"] != "fallback":
@@ -447,16 +573,16 @@ def answer(db: Client, message: str, history: list[dict] | None = None,
                 res["pendingAction"] = action_data
             except (json.JSONDecodeError, ValueError):
                 pass
-        if lang:
-            res["reply"] = from_english(res.get("reply", ""), lang)
+        if lang != "en":
+            res["reply"] = _to_chinese(res.get("reply", ""), lang)
         res["cached"] = False
         _set_cached_response(cache_key, res)
         return res
-    
-    # Final fallback to deterministic answers if LLM fails
+
+    # 7. Final fallback to deterministic answers if LLM fails
     det = _deterministic_answer(db, eng_msg) or res
-    if lang and det.get("reply"):
-        det["reply"] = from_english(det["reply"], lang)
+    if lang != "en" and det.get("reply"):
+        det["reply"] = _to_chinese(det["reply"], lang)
     det["cached"] = False
     _set_cached_response(cache_key, det)
     return det

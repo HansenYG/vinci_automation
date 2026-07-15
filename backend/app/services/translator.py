@@ -12,7 +12,7 @@ def to_english(text: str) -> str:
         return text
     try:
         from deep_translator import GoogleTranslator
-        return GoogleTranslator(source="zh-CN", target="en").translate(text)
+        return GoogleTranslator(source="zh-TW", target="en").translate(text)
     except Exception:
         return text
 
@@ -30,7 +30,7 @@ def batch_to_english(texts: list[str]) -> list[str]:
         return texts
     try:
         from deep_translator import GoogleTranslator
-        translator = GoogleTranslator(source="zh-CN", target="en")
+        translator = GoogleTranslator(source="zh-TW", target="en")
         numbered = "\n".join(f"{i}: {t}" for i, t in enumerate(texts))
         translated = translator.translate(numbered)
         if not translated:
@@ -56,7 +56,7 @@ def from_english(text: str, original_had_chinese: bool) -> str:
         return text
     try:
         from deep_translator import GoogleTranslator
-        translated = GoogleTranslator(source="en", target="zh-CN").translate(text)
+        translated = GoogleTranslator(source="en", target="zh-TW").translate(text)
         return translated if translated else text
     except Exception:
         return text
