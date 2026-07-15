@@ -2,9 +2,20 @@ import axios from 'axios'
 import { supabase } from '../lib/supabaseClient'
 
 // Central HTTP client for talking to the FastAPI backend.
-// Configure the base URL via VITE_API_BASE_URL in your .env file.
+// Prefer the beta backend in hosted preview deployments; otherwise use the
+// explicit VITE_API_BASE_URL env or the local dev server.
+function resolveApiBaseUrl() {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname || ''
+    if (host.includes('vercel.app') || host.includes('beta') || host.includes('preview')) {
+      return 'https://vinci-automation-api-beta.onrender.com'
+    }
+  }
+  return import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000',
+  baseURL: resolveApiBaseUrl(),
   // Render free tier can take up to 50 s to cold-start; give it 70 s before
   // treating a timeout as an auth failure.
   timeout: 70_000,
