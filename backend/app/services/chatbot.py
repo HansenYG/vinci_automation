@@ -707,6 +707,45 @@ def answer(db: Client, message: str, history: list[dict] | None = None,
         _set_cached_response(cache_key, rule_result)
         return rule_result
 
+    # 5b. Deterministic create — if pre-extraction has all fields, skip LLM entirely
+    extracted = _pre_extract_lesson_data(message, db, resolved_school_id, resolved_course_id)
+    if extracted and extracted.get("intent") == "create":
+        school_id = extracted.get("school_id")
+        school_name = extracted.get("school_name")
+        course_id = extracted.get("course_id")
+        course_name = extracted.get("course_name")
+        date = extracted.get("date")
+        start_time = extracted.get("start_time")
+        end_time = extracted.get("end_time")
+        if school_id and school_name and (course_id or course_name) and date:
+            params = {
+                "course_name": course_name,
+                "school_name": school_name,
+                "school_id": school_id,
+                "date": date,
+                "max_tutors": 1,
+            }
+            if course_id:
+                params["course_id"] = course_id
+            if start_time:
+                params["start_time"] = start_time
+            if end_time:
+                params["end_time"] = end_time
+            reply_text = f"I'll create a {course_name} lesson at {school_name} on {date}"
+            if start_time:
+                reply_text += f" at {start_time}"
+            if end_time:
+                reply_text += f"–{end_time}"
+            reply_text += ". Shall I proceed?"
+            if lang != "en":
+                reply_text = _to_chinese(reply_text, lang)
+            return {
+                "reply": reply_text,
+                "source": "deterministic",
+                "pendingAction": {"operation": "create", "params": params},
+                "cached": False,
+            }
+
     # 6. LLM path (now in English, with dual-name catalog for matching)
     res = _llm_reply(db, eng_msg, eng_history or [], lang=True,
                      resolved_school_id=resolved_school_id,
