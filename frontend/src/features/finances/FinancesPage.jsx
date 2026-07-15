@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { PageHeader } from '../../components/layout/Layout'
 import { getFinanceMonths, getTeacherEarnings, getCourseFinancials, computeSnapshot } from '../../services/endpoints'
 import TeacherEarnings from './TeacherEarnings'
 import CourseFinancials from './CourseFinancials'
@@ -25,100 +26,104 @@ export default function FinancesPage() {
   }, [])
 
   useEffect(() => {
-    if (!selected) return
-    if (viewMode === 'overall') {
-      setLoading(true)
-      Promise.all([
-        getTeacherEarnings({}).catch(() => ({ teachers: [] })),
-        getCourseFinancials({}).catch(() => ({ courses: [] })),
-      ])
-        .then(([tRes, cRes]) => {
-          setTeachers(tRes.teachers || [])
-          setCourses(cRes.courses || [])
-        })
-        .finally(() => setLoading(false))
-      return
-    }
-
-    const { year, month } = selected
+    if (!selected && viewMode !== 'overall') return
     setLoading(true)
-    Promise.all([
-      getTeacherEarnings({ year, month }).catch(() => ({ teachers: [] })),
-      getCourseFinancials({ year, month }).catch(() => ({ courses: [] })),
-    ])
+    const request = viewMode === 'overall'
+      ? Promise.all([
+          getTeacherEarnings({}).catch(() => ({ teachers: [] })),
+          getCourseFinancials({}).catch(() => ({ courses: [] })),
+        ])
+      : Promise.all([
+          getTeacherEarnings({ year: selected.year, month: selected.month }).catch(() => ({ teachers: [] })),
+          getCourseFinancials({ year: selected.year, month: selected.month }).catch(() => ({ courses: [] })),
+        ])
+
+    request
       .then(([tRes, cRes]) => {
-        setTeachers(tRes.teachers || [])
-        setCourses(cRes.courses || [])
+        const nextTeachers = Array.isArray(tRes?.teachers) ? tRes.teachers : []
+        const nextCourses = Array.isArray(cRes?.courses) ? cRes.courses : []
+        setTeachers(nextTeachers)
+        setCourses(nextCourses)
       })
       .finally(() => setLoading(false))
   }, [selected, viewMode])
 
   const refreshSnapshot = async () => {
-    if (!selected) return
+    if (!selected && viewMode !== 'overall') return
     setLoading(true)
     try {
-      await computeSnapshot({ year: selected.year, month: selected.month })
+      const target = viewMode === 'overall' ? {} : { year: selected.year, month: selected.month }
+      await computeSnapshot(target)
       const tRes = viewMode === 'overall'
         ? await getTeacherEarnings({})
         : await getTeacherEarnings({ year: selected.year, month: selected.month })
       const cRes = viewMode === 'overall'
         ? await getCourseFinancials({})
         : await getCourseFinancials({ year: selected.year, month: selected.month })
-      setTeachers(tRes.teachers || [])
-      setCourses(cRes.courses || [])
+      const nextTeachers = Array.isArray(tRes?.teachers) ? tRes.teachers : []
+      const nextCourses = Array.isArray(cRes?.courses) ? cRes.courses : []
+      setTeachers(nextTeachers)
+      setCourses(nextCourses)
     } catch (e) {
       // ignore
     }
     setLoading(false)
   }
 
+  const headerLabel = viewMode === 'overall'
+    ? 'Overall totals'
+    : selected ? `${selected.year}-${String(selected.month).padStart(2, '0')}` : 'Select a period'
+
   return (
     <div>
-      <h2>Finances</h2>
-      <p>Read-only tutor earnings and course financials for the latest month, previous months, and overall totals.</p>
+      <PageHeader
+        title="Finances"
+        subtitle="Read-only tutor earnings and course financials for the latest month, previous months, and overall totals."
+        actions={[
+          <div key="seg" className="segmented">
+            <button className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Selected month</button>
+            <button className={viewMode === 'overall' ? 'active' : ''} onClick={() => setViewMode('overall')}>Overall</button>
+          </div>,
+          <button key="refresh" className="btn btn--primary btn--sm" onClick={refreshSnapshot} disabled={loading}>
+            Recompute snapshot
+          </button>,
+        ]}
+      />
 
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label>View:</label>
-        <select value={viewMode} onChange={(e) => setViewMode(e.target.value)}>
-          <option value="month">Selected month</option>
-          <option value="overall">Overall</option>
-        </select>
-
-        {viewMode === 'month' && (
-          <>
-            <label>Snapshot:</label>
-            <select
-              value={selected ? `${selected.year}-${selected.month}` : ''}
-              onChange={(e) => {
-                const v = e.target.value
-                if (!v) return setSelected(null)
-                const [y, m] = v.split('-').map(Number)
-                setSelected({ year: y, month: m })
-              }}
-            >
-              <option value="">Select month</option>
-              {months.map((m) => (
-                <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
-                  {m.year}-{String(m.month).padStart(2, '0')}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
-
-        <button onClick={refreshSnapshot} disabled={viewMode === 'month' && (!selected || loading) || viewMode === 'overall' && loading}>
-          Recompute snapshot
-        </button>
-      </div>
-
-      {selected || viewMode === 'overall' ? (
-        <div>
-          <TeacherEarnings rows={teachers} loading={loading} viewMode={viewMode} selected={selected} />
-          <CourseFinancials rows={courses} loading={loading} viewMode={viewMode} selected={selected} />
+      <section className="content">
+        <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {viewMode === 'month' && (
+              <>
+                <label className="muted" htmlFor="finance-month">Snapshot</label>
+                <select id="finance-month" className="ld-filter-select" value={selected ? `${selected.year}-${selected.month}` : ''} onChange={(e) => {
+                  const v = e.target.value
+                  if (!v) return setSelected(null)
+                  const [y, m] = v.split('-').map(Number)
+                  setSelected({ year: y, month: m })
+                }}>
+                  <option value="">Select month</option>
+                  {months.map((m) => (
+                    <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                      {m.year}-{String(m.month).padStart(2, '0')}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <span className="badge blue">{headerLabel}</span>
+          </div>
         </div>
-      ) : (
-        <p>Please select a snapshot period to view finances.</p>
-      )}
+
+        {(selected || viewMode === 'overall') ? (
+          <div>
+            <TeacherEarnings rows={teachers} loading={loading} viewMode={viewMode} selected={selected} />
+            <CourseFinancials rows={courses} loading={loading} viewMode={viewMode} selected={selected} />
+          </div>
+        ) : (
+          <div className="card empty">Please select a snapshot period to view finances.</div>
+        )}
+      </section>
     </div>
   )
 }
