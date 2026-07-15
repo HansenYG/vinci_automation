@@ -106,11 +106,15 @@ export default function FinancesPage() {
     setSelected({ year: draftSelection.year, month: draftSelection.month })
   }
 
-  const yearOptions = Array.from(new Set(months.map((m) => m.year))).sort((a, b) => b - a)
+  const currentYear = new Date().getFullYear()
+  const yearOptions = Array.from({ length: Math.max(1, currentYear - 2019) }, (_, index) => currentYear - index)
   const selectedYear = draftSelection?.year ?? selected?.year ?? yearOptions[0] ?? null
-  const monthOptions = months
+  const availableMonthsForYear = months
     .filter((m) => m.year === selectedYear)
-    .sort((a, b) => b.month - a.month)
+    .map((m) => m.month)
+    .sort((a, b) => a - b)
+  const monthOptions = (availableMonthsForYear.length > 0 ? availableMonthsForYear : Array.from({ length: 12 }, (_, index) => index + 1))
+    .map((month) => ({ month, label: String(month).padStart(2, '0') }))
 
   const handleYearChange = (event) => {
     const year = Number(event.target.value)
@@ -171,8 +175,8 @@ export default function FinancesPage() {
                 <select id="finance-month" className="ld-filter-select" value={draftSelection && draftSelection.month != null ? draftSelection.month : ''} onChange={handleMonthChange}>
                   <option value="">Select month</option>
                   {monthOptions.map((m) => (
-                    <option key={`${m.year}-${m.month}`} value={m.month}>
-                      {String(m.month).padStart(2, '0')}
+                    <option key={`${selectedYear}-${m.month}`} value={m.month}>
+                      {m.label}
                     </option>
                   ))}
                 </select>
