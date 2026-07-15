@@ -293,7 +293,7 @@ function LessonForm({ onFlash }) {
             </div>
             <div style={{ flex: 1 }}>
               <span className="mini-label">Income (HKD)</span>
-              <input type="number" min="0" step="0.01" value={v.lesson_income} onChange={set('lesson_income')} placeholder="0.00" />
+              <input type="number" min="0" step="0.01" value={v.lesson_income} onChange={set('lesson_income')} placeholder="0.00" style={{ width: '100%', minWidth: 0 }} />
             </div>
           </div>
 
