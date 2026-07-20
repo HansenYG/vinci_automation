@@ -442,3 +442,70 @@
 .ld-status-chip.chip-grey.active   { background: #f1f5f9; color: #475569; border-color: #94a3b8; }
 .ld-status-chip.chip-blue.active   { background: #dbeafe; color: #1d4ed8; border-color: #2563eb; }
 .ld-status-chip.chip-orange.active { background: #fff7ed; color: #c2410c; border-color: #ea580c; }
+
+/* ── Pending tutor-approval alert ────────────────────────────────────────── */
+.ld-pending-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: color-mix(in srgb, var(--status-yellow) 16%, var(--surface));
+  border: 1px solid var(--status-yellow);
+  border-left: 4px solid var(--status-yellow);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.ld-pending-banner__icon { font-size: 18px; }
+
+.ld-pending-banner__text {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.ld-pending-banner__btn {
+  padding: 7px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--status-yellow);
+  color: #1a1a1a;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.15s;
+}
+
+.ld-pending-banner__btn:hover { filter: brightness(0.92); }
+
+/* Clickable "Pending Approvals" stat card */
+.ld-stat--action {
+  cursor: pointer;
+  border-color: var(--status-yellow);
+  transition: box-shadow 0.15s;
+}
+
+.ld-stat--action:hover { box-shadow: var(--shadow); }
+
+/* Rows with tutor applications awaiting approval */
+.ld-table tr.ld-row--pending td {
+  background: color-mix(in srgb, var(--status-yellow) 8%, var(--surface));
+}
+
+.ld-table tr.ld-row--pending td:first-child {
+  border-left: 3px solid var(--status-yellow);
+}
+
+.ld-approval-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--status-yellow);
+  color: #1a1a1a;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}

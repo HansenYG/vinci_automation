@@ -202,6 +202,23 @@ export default function LessonDashboardPage() {
       />
 
       <div className="content">
+        {/* Pending tutor approvals — must be unmissable for the admin */}
+        {stats.hasAcceptance > 0 && (
+          <div className="ld-pending-banner">
+            <span className="ld-pending-banner__icon">⚠️</span>
+            <span className="ld-pending-banner__text">
+              <strong>{stats.hasAcceptance}</strong> lesson{stats.hasAcceptance === 1 ? ' has' : 's have'} tutor
+              application{stats.hasAcceptance === 1 ? '' : 's'} awaiting approval
+            </span>
+            <button
+              className="ld-pending-banner__btn"
+              onClick={() => { setStatusFilter('hasacceptance'); setPage(1) }}
+            >
+              Review now
+            </button>
+          </div>
+        )}
+
         {/* Stats bar */}
         <div className="ld-stats">
           <div className="ld-stat">
@@ -216,9 +233,13 @@ export default function LessonDashboardPage() {
             <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>{stats.noAcceptance}</span>
             <span className="ld-stat__label">Unassigned / Offer Sent</span>
           </div>
-          <div className="ld-stat">
-            <span className="ld-stat__count" style={{ color: 'var(--status-green)' }}>{stats.hasAcceptance}</span>
-            <span className="ld-stat__label">Has Acceptance</span>
+          <div
+            className="ld-stat ld-stat--action"
+            onClick={() => { setStatusFilter('hasacceptance'); setPage(1) }}
+            title="Show lessons with tutor applications awaiting approval"
+          >
+            <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>{stats.hasAcceptance}</span>
+            <span className="ld-stat__label">Pending Approvals</span>
           </div>
         </div>
 
@@ -310,11 +331,15 @@ export default function LessonDashboardPage() {
               <tbody>
                 {displayItems.map((lesson) => {
                   const sm = getStatusMeta(lesson.status)
-                  const needsAction = ['unassigned', 'offersent', 'hasacceptance'].includes(
-                    (lesson.status || '').toLowerCase()
-                  )
+                  const statusKey = (lesson.status || '').toLowerCase()
+                  const needsAction = ['unassigned', 'offersent', 'hasacceptance'].includes(statusKey)
+                  const isPending = statusKey === 'hasacceptance'
                   return (
-                    <tr key={lesson.id} className="clickable" onClick={() => setSelected(lesson)}>
+                    <tr
+                      key={lesson.id}
+                      className={`clickable${isPending ? ' ld-row--pending' : ''}`}
+                      onClick={() => setSelected(lesson)}
+                    >
                       <td>
                         <span className="ld-lesson-code">{lesson.lesson_code || '—'}</span>
                       </td>
@@ -340,6 +365,7 @@ export default function LessonDashboardPage() {
                           <span className={`dot bg-${sm.color}`} />
                           {sm.label}
                         </span>
+                        {isPending && <span className="ld-approval-chip">⏳ Approval needed</span>}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <button className="ld-assign-btn" onClick={() => setSelected(lesson)}>
