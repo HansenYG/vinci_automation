@@ -107,6 +107,14 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
   const lessonId = lesson?.id
 
   useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  useEffect(() => {
     if (!lessonId) return
     setMaterial(lesson.lesson_material_link || '')
     setIncome(lesson.lesson_income ?? '')
