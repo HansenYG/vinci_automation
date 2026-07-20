@@ -1,13 +1,17 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { AlertIcon, CalendarIcon, ChatIcon, DashboardIcon, MoneyIcon } from './Icons'
 import { useDock } from '../../features/chatbot/dockContext'
 import { useAuth } from '../../context/AuthContext'
+import { useLessonsContext } from '../../context/LessonsContext'
+import { getDashboardLessons } from '../../services/endpoints'
 
-function Item({ to, label, Icon, phase }) {
+function Item({ to, label, Icon, phase, badge }) {
   return (
     <NavLink to={to} className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
       <Icon />
       <span>{label}</span>
+      {badge > 0 && <span className="nav-item__badge" title="Lessons with no tutor assigned">{badge}</span>}
       {phase && <span className="nav-item__phase">{phase}</span>}
     </NavLink>
   )
@@ -24,7 +28,24 @@ function initials(name, email) {
 export default function Sidebar() {
   const { open, setOpen, setTab } = useDock()
   const { profile, user, role, isAdmin, signOut } = useAuth()
+  const { version } = useLessonsContext()
   const openAssistant = () => { setTab('chat'); setOpen(true) }
+
+  // Unassigned-lessons count for the red badge on "Lesson Dashboard".
+  // Refreshes on mount, after any lesson mutation (version bump), and
+  // once a minute so WhatsApp-driven changes show up on their own.
+  const [unassigned, setUnassigned] = useState(0)
+  useEffect(() => {
+    let alive = true
+    const load = () => {
+      getDashboardLessons({ page: 1, page_size: 1, status: 'unassigned,offersent' })
+        .then((r) => { if (alive) setUnassigned(r.counts?.unassigned_offersent ?? r.total ?? 0) })
+        .catch(() => {})
+    }
+    load()
+    const t = setInterval(load, 60_000)
+    return () => { alive = false; clearInterval(t) }
+  }, [version])
 
   const displayName = profile?.display_name || user?.email || 'User'
   const email = profile?.email || user?.email || ''
@@ -44,7 +65,7 @@ export default function Sidebar() {
 
       <div className="sidebar__section">Live</div>
       <Item to="/schedule" label="Schedule" Icon={CalendarIcon} />
-      <Item to="/lessons" label="Lesson Dashboard" Icon={DashboardIcon} />
+      <Item to="/lessons" label="Lesson Dashboard" Icon={DashboardIcon} badge={unassigned} />
       <button type="button" className={'nav-item nav-item--btn' + (open ? ' active' : '')} onClick={openAssistant}>
         <ChatIcon />
         <span>Assistant</span>

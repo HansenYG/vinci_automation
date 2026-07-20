@@ -144,10 +144,15 @@ a {
   margin-left: auto;
   background: var(--status-red);
   color: #fff;
-  border-radius: 999px;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 11px;
-  padding: 1px 7px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 .nav-item__phase {
