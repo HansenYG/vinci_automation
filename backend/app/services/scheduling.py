@@ -14,6 +14,7 @@ app.services.repos; everything is logged to lesson_events for traceability.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from postgrest import SyncPostgrestClient
@@ -22,6 +23,8 @@ Client = SyncPostgrestClient
 
 from app.core.config import settings
 from app.services import codes, repos, urgency, wati
+
+logger = logging.getLogger(__name__)
 
 
 def _iso_now() -> str:
@@ -256,16 +259,23 @@ def handle_cancellation(db: Client, lesson_id: str, teacher_id: str | None, inte
         if lesson.get("within_a_week")
         else "Tutor unassigned & class is beyond a week from today"
     )
-    repos.update_row(db, "lessons", lesson_id, {
+    update = {
         "teacher_id": None,
         "tutor_assignment": unassigned_label,
-        "status": "OfferSent",  # reblast will go out; keep visible in dashboard
-    })
+    }
+    if intent == "cancel":
+        # Explicit record of the tutor cancellation. If the re-blast below
+        # finds a replacement, record_acceptance() moves the status on to
+        # HasAcceptance, so Cancelled is a visible, transient state.
+        update["status"] = "Cancelled"
+    else:
+        update["status"] = "OfferSent"  # reblast will go out; keep visible in dashboard
+    repos.update_row(db, "lessons", lesson_id, update)
     if teacher_id:
         repos.set_offer_status(db, lesson_id, teacher_id, "withdrawn", responded_at=_iso_now())
     repos.log_event(db, lesson_id, teacher_id, "reschedule" if intent == "reschedule" else "cancel", {})
 
-    # Notify admin
+    # Notify admin — never skip silently.
     admin_res = None
     if settings.ADMIN_WHATSAPP:
         ctx = repos.lesson_wati_context(lesson)
@@ -274,6 +284,17 @@ def handle_cancellation(db: Client, lesson_id: str, teacher_id: str | None, inte
         ctx["intent"] = intent
         admin_res = wati.send_admin_cancellation(settings.ADMIN_WHATSAPP, ctx)
         repos.log_event(db, lesson_id, None, "admin_notified", {"ok": admin_res["ok"]})
+        if not admin_res["ok"]:
+            logger.warning(
+                "Admin cancellation WhatsApp failed for lesson %s: %s",
+                lesson_id, admin_res.get("error"),
+            )
+    else:
+        logger.warning(
+            "ADMIN_WHATSAPP not configured — admin NOT notified of tutor %s for lesson %s",
+            intent, lesson_id,
+        )
+        repos.log_event(db, lesson_id, None, "admin_notify_skipped", {"reason": "ADMIN_WHATSAPP not configured"})
 
     # Re-blast everyone except the cancelling tutor
     reblast = blast_lesson(db, lesson_id, force_all=True, exclude_teacher_id=teacher_id)
