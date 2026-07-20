@@ -230,7 +230,12 @@ export default function LessonDashboardPage() {
             <span className="ld-stat__label">Urgent (≤7 days)</span>
           </div>
           <div className="ld-stat">
-            <span className="ld-stat__count" style={{ color: 'var(--status-yellow)' }}>{stats.noAcceptance}</span>
+            <span
+              className={`ld-stat__badge${stats.noAcceptance === 0 ? ' ld-stat__badge--zero' : ''}`}
+              title="Lessons with no tutor assigned"
+            >
+              {stats.noAcceptance}
+            </span>
             <span className="ld-stat__label">Unassigned / Offer Sent</span>
           </div>
           <div

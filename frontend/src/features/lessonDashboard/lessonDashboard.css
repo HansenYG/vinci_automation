@@ -509,3 +509,21 @@
   font-weight: 700;
   white-space: nowrap;
 }
+
+/* Red circular count badge (unassigned lessons) */
+.ld-stat__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--status-red);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.ld-stat__badge--zero { background: var(--faint); }
