@@ -63,26 +63,32 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let mounted = true
+    let currentToken = null
 
     // 1) Resolve any persisted session on first load.
     supabase.auth.getSession().then(async ({ data }) => {
       if (!mounted) return
       const s = data?.session ?? null
+      currentToken = s?.access_token ?? null
       setSession(s)
       await refreshProfile(s)
       if (mounted) setLoading(false)
     })
 
     // 2) React to future auth changes (login / logout only).
-    // TOKEN_REFRESH fires on every tab-focus (Supabase silently refreshes the
-    // JWT in the background). Treating it as a full re-auth would re-run
+    // TOKEN_REFRESHED fires on every tab-focus (Supabase silently refreshes
+    // the JWT in the background). Treating it as a full re-auth would re-run
     // refreshProfile(), show "checking your access", and wipe chat history.
     // INITIAL_SESSION fires synchronously with getSession() above — skip it
     // to avoid a duplicate /me call on first load.
-    const SKIP_EVENTS = new Set(['TOKEN_REFRESH', 'USER_UPDATED', 'INITIAL_SESSION', 'MFA_CHALLENGE_VERIFIED'])
+    const SKIP_EVENTS = new Set(['TOKEN_REFRESHED', 'USER_UPDATED', 'INITIAL_SESSION', 'MFA_CHALLENGE_VERIFIED'])
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
       if (!mounted) return
       if (SKIP_EVENTS.has(event)) return          // ← key fix: ignore background refreshes
+      // A fresh session object carrying the SAME access token must not
+      // replace state — that would re-render the entire app on tab focus.
+      if (s && s.access_token === currentToken) return
+      currentToken = s?.access_token ?? null
       setSession(s)
       if (event === 'SIGNED_IN' && s) {
         // Clear stale profile and wait for role before redirecting.
