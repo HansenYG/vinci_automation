@@ -22,6 +22,7 @@ SQL migration files live in `migrations/`. Apply them **in order**:
 | `0003_max_tutors.sql` | Adds `max_tutors` column to courses for blast limits |
 | `0004_lesson_income.sql` | Adds `lesson_income` column to lessons for financial tracking |
 | `0005_phase1_auth.sql` | Auth schema: users table, admin role, RLS policies for Supabase Auth |
+| `0019_fix_view_slot_fulfilment.sql` | `lesson_schedule` status/colour now derive from filled vs required tutor slots (a remaining assigned tutor no longer forces green after a cancellation) |
 
 `0002` is generated from the exported CSVs by `backend/scripts/gen_seed_from_csv.py` —
 re-run that script if the CSVs change.

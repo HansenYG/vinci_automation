@@ -249,31 +249,59 @@ def assign_tutor(
 # --- 6. Cancellation / reschedule (called by the WATI webhook) -------------
 
 def handle_cancellation(db: Client, lesson_id: str, teacher_id: str | None, intent: str) -> dict:
-    """Unassign the lesson, alert the admin, and re-blast the remaining pool."""
+    """Remove ONLY the cancelling tutor from the lesson, then recalculate the
+    lesson's status from slot fulfilment:
+
+      * filled >= required slots -> stays 'Assigned' (green); a backup tutor
+        keeps the lesson fully staffed.
+      * filled <  required slots -> 'OfferSent' (yellow); the lesson_schedule
+        view renders it red when the class is within URGENT_WINDOW_DAYS.
+
+    The lesson itself is never marked 'Cancelled' here — that state is reserved
+    for the class being called off entirely. The admin is alerted and the pool
+    is re-blasted (excluding the cancelling tutor) in all cases.
+    """
     lesson = repos.get_lesson_view(db, lesson_id)
     if not lesson:
         raise ValueError(f"lesson {lesson_id} not found")
 
-    unassigned_label = (
-        "Tutor unassigned & class is within a week of today"
-        if lesson.get("within_a_week")
-        else "Tutor unassigned & class is beyond a week from today"
-    )
-    update = {
-        "teacher_id": None,
-        "tutor_assignment": unassigned_label,
-    }
-    if intent == "cancel":
-        # Explicit record of the tutor cancellation. If the re-blast below
-        # finds a replacement, record_acceptance() moves the status on to
-        # HasAcceptance, so Cancelled is a visible, transient state.
-        update["status"] = "Cancelled"
-    else:
-        update["status"] = "OfferSent"  # reblast will go out; keep visible in dashboard
-    repos.update_row(db, "lessons", lesson_id, update)
+    # 1. Remove only the cancelling tutor's assignment/offer.
     if teacher_id:
         repos.set_offer_status(db, lesson_id, teacher_id, "withdrawn", responded_at=_iso_now())
-    repos.log_event(db, lesson_id, teacher_id, "reschedule" if intent == "reschedule" else "cancel", {})
+
+    # 2. Recalculate slot fulfilment from the offers table (the same source of
+    # truth the lesson_schedule view counts), keeping any legacy primary tutor
+    # who is still assigned via lessons.teacher_id.
+    required = max(1, int(lesson.get("max_tutors") or 1))
+    remaining = [t for t in repos.assigned_teacher_ids(db, lesson_id) if t != teacher_id]
+    legacy_primary = lesson.get("assigned_teacher_id")
+    if legacy_primary and legacy_primary != teacher_id and legacy_primary not in remaining:
+        remaining.append(legacy_primary)
+    filled = len(remaining)
+    new_primary = legacy_primary if legacy_primary in remaining else (remaining[0] if remaining else None)
+
+    if filled >= required:
+        update = {
+            "teacher_id": new_primary,
+            "status": "Assigned",
+            "tutor_assignment": "Tutor assigned",
+        }
+    else:
+        update = {
+            "teacher_id": new_primary,
+            "status": "OfferSent",  # re-blast below; view maps this to red/yellow by date
+            "tutor_assignment": (
+                "Tutor unassigned & class is within a week of today"
+                if lesson.get("within_a_week")
+                else "Tutor unassigned & class is beyond a week from today"
+            ),
+        }
+    repos.update_row(db, "lessons", lesson_id, update)
+    repos.log_event(
+        db, lesson_id, teacher_id,
+        "reschedule" if intent == "reschedule" else "cancel",
+        {"filled_slots": filled, "required_slots": required},
+    )
 
     # Notify admin — never skip silently.
     admin_res = None
@@ -302,6 +330,9 @@ def handle_cancellation(db: Client, lesson_id: str, teacher_id: str | None, inte
     return {
         "lesson_id": lesson_id,
         "intent": intent,
+        "status": update["status"],
+        "filled_slots": filled,
+        "required_slots": required,
         "admin_notified": bool(admin_res and admin_res["ok"]),
         "reblast": reblast,
     }

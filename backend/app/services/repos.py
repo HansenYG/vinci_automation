@@ -354,6 +354,21 @@ def assigned_lessons_for_teacher(db: Client, teacher_id: str) -> list[dict]:
     )
 
 
+def assigned_teacher_ids(db: Client, lesson_id: str) -> list[str]:
+    """Teacher IDs currently assigned to the lesson (offer_status='assigned') —
+    the same source of truth the lesson_schedule view counts for slot fulfilment."""
+    rows = (
+        db.table("lesson_tutor_offers")
+        .select("teacher_id")
+        .eq("lesson_id", lesson_id)
+        .eq("offer_status", "assigned")
+        .execute()
+        .data
+        or []
+    )
+    return [r["teacher_id"] for r in rows]
+
+
 def accepted_teacher_ids(db: Client, lesson_id: str) -> list[str]:
     rows = (
         db.table("lesson_tutor_offers")
