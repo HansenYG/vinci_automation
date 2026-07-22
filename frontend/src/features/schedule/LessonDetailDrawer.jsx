@@ -281,7 +281,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             <div className="field">
               <span className="field__label">School</span>
               <div className="link-input">
-                <select value={school} onChange={(e) => setSchool(e.target.value)} style={{ flex: 1, padding: '6px 8px', fontSize: 13, borderRadius: 6, border: '1px solid var(--border)' }}>
+                <select value={school} onChange={(e) => setSchool(e.target.value)} style={{ flex: 1, maxWidth: 200, padding: '6px 8px', fontSize: 13, borderRadius: 6, border: '1px solid var(--border)' }}>
                   <option value="">— select school —</option>
                   {schools.map((s) => <option key={s.school_id} value={s.school_name}>{s.school_name}</option>)}
                 </select>
@@ -305,7 +305,7 @@ export default function LessonDetailDrawer({ lesson, onClose, onChanged, sourceV
             <div className="field">
               <span className="field__label">Start</span>
               <div className="link-input">
-                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} style={{ maxWidth: 150 }} />
                 <button className="btn btn--sm" disabled={busy} onClick={() => saveTime('start')}>
                   Save
                 </button>

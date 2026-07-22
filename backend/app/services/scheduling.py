@@ -405,7 +405,7 @@ def announce_lesson(db: Client, *, lesson_code, date, start_time, end_time, cour
     }
 
     # Message a pool a bit larger than the cap so enough tutors can accept.
-    pool_size = min(max(int(max_tutors or 1) * 2, 4), 12)
+    pool_size = min(int(max_tutors or 1) * 2, 12)
     teacher_ids, llm_used = chatbot.select_tutor_ids(db, course=course_name, school=school or "", topic=topic, limit=pool_size)
 
     messaged = []
