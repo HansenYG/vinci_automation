@@ -18,6 +18,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
+log = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,6 +45,7 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 
 def create_app() -> FastAPI:
+    log.info("Starting Vinci Automation API — creating FastAPI app")
     app = FastAPI(
         title=settings.PROJECT_NAME,
         lifespan=lifespan,
